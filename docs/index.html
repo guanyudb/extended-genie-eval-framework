@@ -1,0 +1,1780 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Genie Evaluation at Scale</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: a slide deck — fixed top bar, one scrollable stage per slide, workflow map as the hub that links to one slide per pipeline step. */
+:root {
+  --bg: #F3F6F9;
+  --surface: #FFFFFF;
+  --surface-2: #E9EEF4;
+  --ink: #132132;
+  --muted: #566577;
+  --line: #D3DBE4;
+  --accent: #D9381E;
+  --accent-soft: #FBE3DD;
+  --navy: #1D3D5C;
+  --good: #17806A;
+  --good-soft: #DDF1EB;
+  --bad: #C8402F;
+  --bad-soft: #F8E0DC;
+  --warn: #9A6A10;
+  --warn-soft: #F6EBD3;
+  --code-bg: #0F1B2A;
+  --code-fg: #DCE6F0;
+  --code-line: #22344A;
+  --c-comment: #7E92A7;
+  --c-key: #FF9470;
+  --c-str: #A3DDBB;
+  --c-num: #F5C970;
+  --c-fn: #8CC8FF;
+  --c-builtin: #C9A8FF;
+  --c-punc: #A7B6C6;
+  --font-display: "Barlow Semi Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+  --font-body: "Source Sans 3", "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
+  --fs-xs: .78rem; --fs-sm: .9rem; --fs-md: 1rem; --fs-lg: 1.2rem; --fs-xl: 1.6rem; --fs-2xl: 2.2rem; --fs-3xl: clamp(2.3rem, 5.2vw, 3.8rem);
+  --radius: 10px;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0D1520; --surface: #142131; --surface-2: #1A2A3D; --ink: #E5ECF3; --muted: #98A8BA; --line: #29394D;
+    --accent: #FF6B47; --accent-soft: #3A2019; --navy: #9CC2E6;
+    --good: #3CC29A; --good-soft: #143229; --bad: #FF7D6B; --bad-soft: #3A1E1A; --warn: #E3B24E; --warn-soft: #33290F;
+    --code-bg: #09111B; --code-line: #1C2C40;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0D1520; --surface: #142131; --surface-2: #1A2A3D; --ink: #E5ECF3; --muted: #98A8BA; --line: #29394D;
+  --accent: #FF6B47; --accent-soft: #3A2019; --navy: #9CC2E6;
+  --good: #3CC29A; --good-soft: #143229; --bad: #FF7D6B; --bad-soft: #3A1E1A; --warn: #E3B24E; --warn-soft: #33290F;
+  --code-bg: #09111B; --code-line: #1C2C40;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 400 var(--fs-md)/1.55 var(--font-body); -webkit-font-smoothing: antialiased; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.12; margin: 0; text-wrap: balance; }
+h1 { font-size: var(--fs-3xl); font-weight: 700; letter-spacing: -.01em; }
+h2 { font-size: var(--fs-2xl); font-weight: 700; }
+h3 { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); }
+p { margin: 0; }
+a { color: var(--navy); }
+code, .mono { font-family: var(--font-mono); font-size: .88em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button { font: inherit; color: inherit; }
+
+/* ---------- app frame ---------- */
+.app { display: grid; grid-template-rows: auto 1fr auto; height: 100%; }
+.bar { display: flex; align-items: center; gap: 1rem; padding: calc(env(safe-area-inset-top, 0px) + .55rem) clamp(16px, 3vw, 32px) .55rem; background: var(--surface); border-bottom: 1px solid var(--line); }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; letter-spacing: .02em; white-space: nowrap; }
+.brand .x { color: var(--accent); padding-inline: .25rem; }
+.bar .now { flex: 1; min-width: 0; color: var(--muted); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.controls { display: flex; align-items: center; gap: .4rem; }
+.btn { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: .35rem .7rem; cursor: pointer; font-size: var(--fs-sm); line-height: 1.2; }
+.btn:hover { border-color: var(--muted); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.counter { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); min-width: 4.2rem; text-align: center; font-variant-numeric: tabular-nums; }
+.stage { overflow: auto; position: relative; }
+.foot { display: flex; align-items: center; gap: 1rem; padding: .4rem clamp(16px, 3vw, 32px) calc(env(safe-area-inset-bottom, 0px) + .4rem); background: var(--surface); border-top: 1px solid var(--line); font-size: var(--fs-xs); color: var(--muted); }
+.progress { flex: 1; height: 4px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.progress i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .25s ease; }
+.keys kbd { font-family: var(--font-mono); border: 1px solid var(--line); border-radius: 4px; padding: 0 .3rem; background: var(--surface-2); }
+
+/* ---------- slides ---------- */
+.slide { max-width: 1240px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 56px); padding-block: clamp(1.5rem, 4vh, 3rem) 3rem; display: flex; flex-direction: column; gap: 1.5rem; }
+.slide.is-entering { animation: enter .28s ease both; }
+@keyframes enter { from { opacity: .35; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .slide.is-entering { animation: none; } .progress i { transition: none; } }
+.eyebrow { font-size: var(--fs-xs); font-weight: 700; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); }
+.lede { font-size: var(--fs-lg); color: var(--muted); max-width: 62ch; }
+.head { display: flex; flex-direction: column; gap: .6rem; }
+
+/* title slide */
+.cover { min-height: 100%; justify-content: center; gap: 2rem; }
+.cover h1 { max-width: 18ch; }
+.cover .meta { display: flex; flex-wrap: wrap; gap: .5rem 1.5rem; color: var(--muted); font-size: var(--fs-sm); }
+.cover .actions { display: flex; flex-wrap: wrap; gap: .6rem; }
+.pipeline-mini { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); }
+.pipeline-mini span { border: 1px solid var(--line); border-radius: 999px; padding: .15rem .55rem; background: var(--surface); }
+.pipeline-mini b { color: var(--accent); font-weight: 600; }
+
+/* generic grids */
+.two { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1.1rem 1.2rem; display: flex; flex-direction: column; gap: .75rem; min-width: 0; }
+.stages { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; counter-reset: st; }
+.stages li { display: grid; grid-template-columns: 1.9rem 1fr; gap: .6rem; align-items: baseline; }
+.stages li::before { counter-increment: st; content: counter(st); font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--muted); border: 1px solid var(--line); border-radius: 6px; text-align: center; padding: .05rem 0; }
+.asks { display: grid; gap: .75rem; }
+.ask { border-left: 3px solid var(--accent); padding: .2rem 0 .2rem .85rem; display: flex; flex-direction: column; gap: .2rem; }
+.ask b { font-family: var(--font-display); font-size: 1.15rem; }
+.ask span { color: var(--muted); }
+
+/* chips */
+.chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip { font-size: var(--fs-xs); font-weight: 600; border-radius: 999px; padding: .12rem .55rem; background: var(--surface-2); color: var(--ink); border: 1px solid var(--line); white-space: nowrap; }
+.chip.ga { background: var(--good-soft); color: var(--good); border-color: transparent; }
+.chip.beta { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip.plan { background: transparent; color: var(--muted); border-style: dashed; }
+
+/* ---------- workflow map ---------- */
+.map { display: grid; gap: .9rem; }
+.lane { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 1rem; align-items: stretch; }
+.lane-label { display: flex; flex-direction: column; justify-content: center; gap: .2rem; border-right: 2px solid var(--line); padding-right: .8rem; }
+.lane-label b { font-family: var(--font-display); font-size: 1.05rem; }
+.lane-label span { font-size: var(--fs-xs); color: var(--muted); }
+.lane-nodes { display: flex; gap: 1.4rem; align-items: stretch; min-width: 0; }
+.lane-nodes > * { flex: 1 1 0; min-width: 0; position: relative; }
+.lane-nodes > *:not(:last-child)::after { content: ""; position: absolute; right: -1.2rem; top: 50%; width: 1rem; height: 2px; background: var(--muted); opacity: .55; }
+.lane-nodes > *:not(:last-child)::before { content: ""; position: absolute; right: -1.25rem; top: calc(50% - 4px); border: 5px solid transparent; border-left-color: var(--muted); opacity: .55; transform: translateX(5px); }
+.fork { display: flex; flex-direction: column; gap: .5rem; }
+.fork .or { font-size: var(--fs-xs); color: var(--muted); text-align: center; text-transform: uppercase; letter-spacing: .08em; }
+.node { width: 100%; height: 100%; justify-content: center; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .65rem .75rem; cursor: pointer; display: flex; flex-direction: column; gap: .3rem; transition: border-color .15s, box-shadow .15s; }
+.node:hover { border-color: var(--muted); }
+.node[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.node .n { font-family: var(--font-mono); font-size: var(--fs-xs); color: var(--accent); font-weight: 600; }
+.node .t { font-family: var(--font-display); font-weight: 600; font-size: 1.05rem; line-height: 1.15; }
+.node .cap { font-size: var(--fs-xs); color: var(--muted); line-height: 1.35; }
+.rails { display: grid; gap: .4rem; margin-top: .2rem; }
+.rail { display: grid; grid-template-columns: 8.5rem minmax(0, 1fr); gap: 1rem; align-items: center; font-size: var(--fs-sm); }
+.rail b { font-family: var(--font-display); font-size: 1rem; }
+.rail div { border: 1px dashed var(--line); border-radius: 8px; padding: .35rem .7rem; color: var(--muted); background: var(--surface); }
+.rail.loop div { border-style: solid; border-color: var(--accent); color: var(--ink); background: var(--accent-soft); }
+.map-detail { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 1.2rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.1rem; }
+.map-detail .info { display: flex; flex-direction: column; gap: .6rem; min-width: 0; }
+.map-detail .info h3 { color: var(--accent); }
+.map-detail .info .t { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: 700; line-height: 1.1; }
+.map-detail .info .result { border-top: 1px solid var(--line); padding-top: .6rem; font-size: var(--fs-sm); }
+.map-detail .preview { min-width: 0; }
+.map-detail .preview pre { max-height: 17rem; }
+
+/* ---------- step slides ---------- */
+.strip { display: flex; flex-wrap: wrap; gap: .3rem; }
+.strip button { border: 1px solid var(--line); background: var(--surface); border-radius: 6px; padding: .15rem .5rem; font-size: var(--fs-xs); cursor: pointer; color: var(--muted); }
+.strip button b { font-family: var(--font-mono); color: var(--ink); margin-right: .3rem; }
+.strip button[aria-current="step"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+.strip button[aria-current="step"] b { color: #fff; }
+.step-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 1.4rem; align-items: start; }
+.facts { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
+.fact { display: flex; flex-direction: column; gap: .4rem; }
+.fact p { max-width: 60ch; }
+.fact.watch { background: var(--warn-soft); border-radius: 8px; padding: .7rem .85rem; }
+.fact.watch h3 { color: var(--warn); }
+.metrics { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+.metrics li { display: grid; grid-template-columns: 4.6rem 1fr; gap: .6rem; align-items: baseline; }
+.metrics b { font-family: var(--font-display); font-size: 1.35rem; font-weight: 700; color: var(--navy); text-align: right; font-variant-numeric: tabular-nums; }
+
+/* code panel */
+.codepanel { background: var(--code-bg); border-radius: var(--radius); min-width: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--code-line); }
+.cp-head { display: flex; align-items: stretch; gap: .25rem; border-bottom: 1px solid var(--code-line); padding: .35rem .4rem 0; }
+.tabs { display: flex; gap: .2rem; overflow-x: auto; flex: 1; min-width: 0; }
+.tab { border: 0; background: transparent; color: var(--c-punc); font-family: var(--font-mono); font-size: .74rem; padding: .4rem .65rem; border-radius: 6px 6px 0 0; cursor: pointer; white-space: nowrap; }
+.tab[aria-selected="true"] { background: var(--code-line); color: var(--code-fg); }
+.tab.out { color: var(--c-str); }
+.copy { border: 1px solid var(--code-line); background: transparent; color: var(--c-punc); font-size: .72rem; border-radius: 6px; padding: .2rem .55rem; margin: .1rem 0 .35rem; cursor: pointer; font-family: var(--font-mono); }
+.copy:hover { color: var(--code-fg); }
+.panels > div { min-width: 0; }
+pre.code { margin: 0; padding: .9rem 1rem 1.1rem; overflow: auto; max-height: 62vh; color: var(--code-fg); font: 400 .78rem/1.55 var(--font-mono); tab-size: 4; }
+pre.code code { font-size: inherit; font-family: inherit; background: none; }
+.out-wrap { padding: .9rem 1rem 1.1rem; color: var(--code-fg); font-size: var(--fs-sm); overflow: auto; max-height: 62vh; display: flex; flex-direction: column; gap: .8rem; }
+.out-wrap h4 { margin: 0; font-family: var(--font-mono); font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--c-comment); }
+.out-wrap pre.code { padding: 0; max-height: none; }
+.out-wrap .note { color: var(--c-comment); font-size: var(--fs-xs); }
+table.out { border-collapse: collapse; width: 100%; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.tw { overflow-x: auto; }
+table.out th { text-align: left; color: var(--c-comment); font-weight: 600; font-family: var(--font-mono); font-size: .7rem; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--code-line); padding: .3rem .5rem .3rem 0; white-space: nowrap; }
+table.out td { border-bottom: 1px solid var(--code-line); padding: .35rem .5rem .35rem 0; vertical-align: top; }
+table.out td.num { text-align: right; font-family: var(--font-mono); font-size: .75rem; }
+table.out .ok { color: var(--c-str); }
+table.out .no { color: var(--c-key); }
+table.out .mid { color: var(--c-num); }
+
+/* prism tokens (code is dark in both themes) */
+.token.comment, .token.prolog { color: var(--c-comment); font-style: italic; }
+.token.keyword, .token.important, .token.atrule { color: var(--c-key); }
+.token.string, .token.char, .token.attr-value, .token.template-string { color: var(--c-str); }
+.token.number, .token.boolean, .token.constant { color: var(--c-num); }
+.token.function, .token.class-name { color: var(--c-fn); }
+.token.builtin, .token.decorator, .token.property { color: var(--c-builtin); }
+.token.operator, .token.punctuation { color: var(--c-punc); }
+
+/* charts */
+.chart { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--ink); font-family: var(--font-body); font-size: 12px; }
+.chart .muted { fill: var(--muted); }
+.chart .grid { stroke: var(--line); stroke-width: 1; }
+.chart .good { fill: var(--good); }
+.chart .bad { fill: var(--bad); }
+.chart .navy { fill: var(--navy); }
+.chart .acc { fill: var(--accent); }
+.chart .after { fill: none; stroke: var(--accent); stroke-width: 2.5; }
+.legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; font-size: var(--fs-xs); color: var(--muted); }
+.legend i { display: inline-block; width: .8rem; height: .8rem; border-radius: 2px; margin-right: .35rem; vertical-align: -.1rem; }
+.legend .ring { background: transparent; border: 2px solid var(--accent); border-radius: 50%; }
+
+/* results */
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1rem; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .9rem 1rem; display: flex; flex-direction: column; gap: .25rem; }
+.kpi b { font-family: var(--font-display); font-size: 2.1rem; font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; }
+.kpi span { color: var(--muted); font-size: var(--fs-sm); }
+.kpi.hl b { color: var(--accent); }
+
+/* lists for planning slides */
+.rows { display: grid; gap: .6rem; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: .75rem 1rem; }
+.row b { font-family: var(--font-display); font-size: 1.1rem; display: block; }
+.row .why { color: var(--muted); font-size: var(--fs-sm); }
+.row .do { border-left: 2px solid var(--good); padding-left: .8rem; }
+.options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.2rem; }
+.option h3 { color: var(--accent); }
+.option .t { font-family: var(--font-display); font-size: var(--fs-xl); font-weight: 700; }
+.option ul, .plain { margin: 0; padding-left: 1.1rem; display: grid; gap: .3rem; }
+.flowline { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; font-family: var(--font-mono); font-size: .74rem; }
+.flowline span { border: 1px solid var(--line); border-radius: 6px; padding: .2rem .5rem; background: var(--surface-2); }
+.flowline em { color: var(--muted); font-style: normal; }
+.steps-next { list-style: none; margin: 0; padding: 0; display: grid; gap: .7rem; counter-reset: nx; }
+.steps-next li { display: grid; grid-template-columns: 2.2rem 1fr; gap: .8rem; align-items: start; }
+.steps-next li::before { counter-increment: nx; content: counter(nx); font-family: var(--font-display); font-weight: 700; font-size: 1.3rem; color: #fff; background: var(--accent); border-radius: 8px; text-align: center; line-height: 2.2rem; }
+.steps-next b { font-family: var(--font-display); font-size: 1.15rem; display: block; }
+
+/* contents overlay */
+.toc { position: fixed; inset: 0; background: color-mix(in srgb, var(--bg) 70%, transparent); backdrop-filter: blur(3px); display: grid; place-items: start center; padding: calc(env(safe-area-inset-top, 0px) + 4rem) 16px 2rem; z-index: 10; overflow: auto; }
+.toc-card { width: min(720px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 1rem 1.2rem; box-shadow: 0 18px 50px rgba(0,0,0,.18); }
+.toc-card ol { margin: .6rem 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .2rem 1rem; }
+.toc-card button { width: 100%; text-align: left; border: 0; background: transparent; padding: .35rem .4rem; border-radius: 6px; cursor: pointer; font-size: var(--fs-sm); }
+.toc-card button:hover, .toc-card button[aria-current="true"] { background: var(--surface-2); }
+.toc-card button span { font-family: var(--font-mono); color: var(--muted); margin-right: .5rem; font-size: var(--fs-xs); }
+
+
+/* demo-workspace links */
+.ws-list { display: flex; flex-wrap: wrap; gap: .4rem; }
+.ws-link { display: inline-flex; align-items: baseline; gap: .45rem; max-width: 100%; border: 1px solid var(--line); border-radius: 8px; padding: .3rem .6rem; background: var(--surface); color: var(--ink); text-decoration: none; font-size: var(--fs-sm); line-height: 1.3; }
+.ws-link:hover { border-color: var(--accent); }
+.ws-link .kind { font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--accent); white-space: nowrap; }
+.ws-link .lbl { min-width: 0; overflow-wrap: anywhere; }
+.ws-link::after { content: "↗"; color: var(--muted); font-size: var(--fs-xs); }
+.fact.ws h3 { color: var(--accent); }
+.hub { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; }
+.hub-card .hub-desc { color: var(--muted); font-size: var(--fs-sm); }
+.hub-card .ws-list { flex-direction: column; align-items: flex-start; }
+.demo-note { font-size: var(--fs-sm); color: var(--muted); }
+@media (max-width: 980px) { .hub { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .hub { grid-template-columns: minmax(0, 1fr); } }
+
+/* responsive */
+@media (max-width: 980px) {
+  .step-grid, .map-detail, .two, .options { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lane, .rail { grid-template-columns: minmax(0, 1fr); }
+  .lane-label { border-right: 0; border-bottom: 2px solid var(--line); padding: 0 0 .3rem; }
+  .lane-nodes { flex-wrap: wrap; gap: .6rem; }
+  .lane-nodes > * { flex: 1 1 13rem; }
+  .lane-nodes > *::after, .lane-nodes > *::before { display: none; }
+  .row { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 560px) {
+  .bar .now, .keys { display: none; }
+  .toc-card ol { grid-template-columns: minmax(0, 1fr); }
+  .kpis { grid-template-columns: minmax(0, 1fr); }
+  h2 { font-size: var(--fs-xl); }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand">Databricks<span class="x">·</span>Reference implementation</div>
+    <div class="now" id="nowTitle">Genie evaluation at scale</div>
+    <div class="controls">
+      <button class="btn" id="tocBtn" type="button" aria-haspopup="dialog">Contents</button>
+      <button class="btn" id="themeBtn" type="button" aria-label="Switch light or dark theme">Theme</button>
+      <button class="btn" id="prevBtn" type="button" aria-label="Previous slide">←</button>
+      <span class="counter" id="counter">1 / 1</span>
+      <button class="btn primary" id="nextBtn" type="button" aria-label="Next slide">→</button>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+
+<!-- ===================== 1. COVER ===================== -->
+<section class="slide cover" id="cover" data-title="Genie evaluation at scale">
+  <p class="eyebrow">Extended Genie evaluation framework · October 2026</p>
+  <h1>Genie evaluation at scale, built natively on Databricks</h1>
+  <p class="lede">A working reference implementation of a SQL-grounded evaluation framework for Genie agents. It evaluates beyond the 500-benchmark limit, reports health per core question, and updates ground truth once per core question with a selective re-run.</p>
+  <div class="pipeline-mini" aria-label="Pipeline summary">
+    <span>core questions</span><b>→</b><span>variations</span><b>→</b><span>validation</span><b>→</b><span>Genie</span><b>→</b><span>compare</span><b>→</b><span>triage</span><b>→</b><span>health</span><b>→</b><span>fix &amp; re-run</span>
+  </div>
+  <div class="actions">
+    <button class="btn primary" type="button" data-go="map">Open the workflow map</button>
+    <button class="btn" type="button" data-go="asks">Start from the beginning</button>
+    <button class="btn" type="button" data-go="demo">Reference package</button>
+  </div>
+  <div class="meta">
+    <span>Built and run on synthetic pharma-commercial data with fictional brands (TRx / NRx by brand, territory, rep, quarter)</span>
+    <span>Use <span class="mono">←</span> <span class="mono">→</span> to move between slides</span>
+  </div>
+</section>
+
+<!-- ===================== 2. ASKS ===================== -->
+<section class="slide" id="asks" data-title="Starting point">
+  <div class="head">
+    <p class="eyebrow">Starting point</p>
+    <h2>A custom evaluation pipeline, and what it needs from the platform</h2>
+    <p class="lede">Teams running Genie in production often build an evaluation pipeline like this one. A commercial analytics team can need 1,000 to 1,500 benchmark questions per agent, and that number grows with every new market and brand. A Genie agent holds up to 500.</p>
+  </div>
+  <div class="two">
+    <div class="panel">
+      <h3>A typical custom evaluation pipeline</h3>
+      <ol class="stages">
+        <li>Core Q&amp;A set: business questions with validated ground-truth SQL</li>
+        <li>Python script generates phrasing variations (paraphrase, typos, shorthand)</li>
+        <li>Validation suite stores core questions and variations in Delta</li>
+        <li>MLflow evaluate pipeline sends each question to Genie and runs both SQLs</li>
+        <li>Result DataFrames are compared</li>
+        <li>LLM-as-a-judge checks semantic equivalence</li>
+        <li>Diagnostic report classifies failures and recommends fixes</li>
+        <li>Data scientists update instructions and re-evaluate the agent</li>
+      </ol>
+    </div>
+    <div class="panel">
+      <h3>What it needs from the platform</h3>
+      <div class="asks">
+        <div class="ask"><b>Evaluate more than 500 questions per agent</b><span>Keep the full benchmark set running as markets and brands are added.</span></div>
+        <div class="ask"><b>Core-question health</b><span>See accuracy per core question, not only one overall score, so underperforming questions stand out.</span></div>
+        <div class="ask"><b>Bulk ground-truth update</b><span>Update ground-truth SQL once per core question, propagate it to every variation, and re-evaluate only those.</span></div>
+        <div class="ask"><b>Run it fully on Databricks</b><span>Replace the externally hosted LLM report step with governed, native capabilities.</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 3. WORKFLOW MAP ===================== -->
+<section class="slide" id="map" data-title="Workflow map">
+  <div class="head">
+    <p class="eyebrow">Overview · select a step</p>
+    <h2>The workflow on Databricks</h2>
+    <p class="lede">Twelve steps in three stages. Select any step to see what it does, what we observed, and the code. Open it for the full breakdown.</p>
+  </div>
+  <div class="map" id="mapGrid">
+    <div class="lane">
+      <div class="lane-label"><b>Build</b><span>the benchmark</span></div>
+      <div class="lane-nodes">
+        <button class="node" type="button" data-step="core" aria-pressed="false"><span class="n">01</span><span class="t">Core question set</span><span class="cap">Delta + Change Data Feed</span></button>
+        <button class="node" type="button" data-step="gen" aria-pressed="false"><span class="n">02</span><span class="t">Generate variations</span><span class="cap">ai_query() · system.ai model</span></button>
+        <button class="node" type="button" data-step="val" aria-pressed="false"><span class="n">03</span><span class="t">Validate variations</span><span class="cap">ai_decide()</span></button>
+        <button class="node" type="button" data-step="sync" aria-pressed="false"><span class="n">04</span><span class="t">Sync to Genie</span><span class="cap">Genie agent management API</span></button>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lane-label"><b>Evaluate</b><span>two paths, same data</span></div>
+      <div class="lane-nodes">
+        <div class="fork">
+          <button class="node" type="button" data-step="native" aria-pressed="false"><span class="n">05</span><span class="t">Native benchmark evaluation</span><span class="cap">Benchmark evaluation API</span></button>
+          <span class="or">and / or</span>
+          <button class="node" type="button" data-step="harness" aria-pressed="false"><span class="n">06</span><span class="t">MLflow harness</span><span class="cap">Conversation API + mlflow.genai.evaluate</span></button>
+        </div>
+        <button class="node" type="button" data-step="compare" aria-pressed="false"><span class="n">07</span><span class="t">Compare results</span><span class="cap">Result-set scorer</span></button>
+        <button class="node" type="button" data-step="triage" aria-pressed="false"><span class="n">08</span><span class="t">Triage failures</span><span class="cap">ai_decide() with confidence</span></button>
+      </div>
+    </div>
+    <div class="lane">
+      <div class="lane-label"><b>Improve</b><span>diagnose, report, fix</span></div>
+      <div class="lane-nodes">
+        <button class="node" type="button" data-step="recommend" aria-pressed="false"><span class="n">09</span><span class="t">Recommend fixes</span><span class="cap">Unity Gateway model service</span></button>
+        <button class="node" type="button" data-step="health" aria-pressed="false"><span class="n">10</span><span class="t">Core-question health</span><span class="cap">Delta view + AI/BI dashboard</span></button>
+        <button class="node" type="button" data-step="bulk" aria-pressed="false"><span class="n">11</span><span class="t">Bulk ground-truth update</span><span class="cap">One UPDATE + selective run</span></button>
+        <button class="node" type="button" data-step="loop" aria-pressed="false"><span class="n">12</span><span class="t">Improvement loop</span><span class="cap">Instruction change + selective run</span></button>
+      </div>
+    </div>
+    <div class="rails">
+      <div class="rail loop"><b>Feedback</b><div>Steps 11 and 12 change ground truth or instructions, then re-run only the affected core questions through steps 05 to 08.</div></div>
+      <div class="rail"><b>Unity Catalog</b><div>Every input, result, and audit trail is a governed Delta table in one schema.</div></div>
+      <div class="rail"><b>Unity Gateway</b><div>Governed LLM access for steps 02 and 09. ai_decide() in steps 03 and 08 runs on Databricks-hosted models.</div></div>
+      <div class="rail"><b>Orchestration</b><div>Lakeflow Jobs to schedule the chain. Recommended next; the prototype ran the steps as scripts.</div></div>
+    </div>
+  </div>
+  <div class="map-detail" id="mapDetail" aria-live="polite">
+    <div class="info">
+      <h3 id="mdEyebrow">Step 01 · Build</h3>
+      <div class="t" id="mdTitle">Core question set</div>
+      <div class="chips" id="mdChips"></div>
+      <p id="mdSummary"></p>
+      <p class="result" id="mdResult"></p>
+      <div class="ws-list" id="mdLinks"></div>
+      <div><button class="btn primary" type="button" id="mdOpen">Open step →</button></div>
+    </div>
+    <div class="preview" id="mdPreview"></div>
+  </div>
+</section>
+
+<!-- ===================== STEP 01 ===================== -->
+<section class="slide step" id="step-core" data-title="01 · Core question set" data-step="core">
+  <div class="head">
+    <p class="eyebrow">Step 01 of 12 · Build the benchmark</p>
+    <h2>Core question set with a single copy of ground truth</h2>
+    <p class="lede">Ground-truth SQL lives only on the core question. Variations point to it by <code>core_id</code>, so a correction is made once.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 1, the core Q&amp;A set, and the benchmark Delta table. Ground truth is stored on every variation row.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Unity Catalog</span><span class="chip">Delta</span><span class="chip">Change Data Feed</span></div><p>Two tables in one governed schema. <code>core_questions</code> holds the question, runtime arguments, ground-truth SQL, and who changed it and why. <code>variations</code> holds every phrasing with its <code>core_id</code>. Change Data Feed keeps the before and after of every edit.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>8</b><span>core questions covering rep, brand, region, ranking, trend, period comparison, metric definition, and a join</span></li><li><b>91</b><span>weeks of synthetic TRx / NRx for 20 reps and 4 brands</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>Spark SQL reads <code>'a''b'</code> as two adjacent literals, not an escaped quote. Our first seed silently lost its quotes and every benchmark failed. Escape with <code>\'</code> and execute every ground-truth query before it reaches Genie.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">02a_core_questions.sql</button><button class="tab" role="tab" aria-selected="false" type="button">02b seed rows</button><button class="tab" role="tab" aria-selected="false" type="button">inherit GT</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-sql">CREATE OR REPLACE TABLE {{schema}}.core_questions (
+  core_id STRING NOT NULL COMMENT 'Core business question ID (e.g. Q001)',
+  question STRING COMMENT 'Canonical natural-language question',
+  arguments STRING COMMENT 'Runtime arguments, e.g. sales_rep_id',
+  gt_sql STRING COMMENT 'Ground-truth SQL - single source of truth for all variations of this core question',
+  complexity STRING,
+  business_dimension STRING,
+  updated_by STRING,
+  update_reason STRING
+) COMMENT 'Core Q&amp;A set. Ground truth lives ONLY here; variations inherit it by core_id.'
+TBLPROPERTIES (delta.enableChangeDataFeed = true)</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-sql">INSERT INTO {{schema}}.core_questions VALUES
+('Q001', 'What were my Zorvela TRx in 2026-Q2?', 'sales_rep_id = REP001',
+ 'SELECT SUM(trx) AS total_trx FROM {{schema}}.rx_weekly WHERE brand = \'ZORVELA\' AND quarter = \'2026-Q2\' AND sales_rep_id = \'REP001\'', 'simple', 'rep/brand/time', 'seed', 'initial load'),
+('Q002', 'What were total NRx by brand in 2026-Q2?', NULL,
+ 'SELECT brand, SUM(nrx) AS total_nrx FROM {{schema}}.rx_weekly WHERE quarter = \'2026-Q2\' GROUP BY brand ORDER BY brand', 'simple', 'brand/time', 'seed', 'initial load'),
+-- … six more core questions (Q003 to Q008)</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-sql">-- Variations carry no ground truth of their own: they inherit it from the core question
+SELECT v.test_id, v.core_id, v.question, v.arguments, c.gt_sql
+FROM {{schema}}.variations v
+JOIN {{schema}}.core_questions c USING (core_id)
+WHERE v.status = 'valid'
+ORDER BY v.test_id</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>core_questions (8 rows)</h4>
+          <div class="tw"><table class="out"><thead><tr><th>core_id</th><th>question</th><th>dimension</th></tr></thead><tbody>
+            <tr><td>Q001</td><td>What were my Zorvela TRx in 2026-Q2? <span class="note">(sales_rep_id = REP001)</span></td><td>rep / brand / time</td></tr>
+            <tr><td>Q002</td><td>What were total NRx by brand in 2026-Q2?</td><td>brand / time</td></tr>
+            <tr><td>Q003</td><td>What was Zorvela market share in the Northeast region in 2026-Q2?</td><td>metric definition</td></tr>
+            <tr><td>Q004</td><td>Which 5 territories had the highest Telmarix TRx in 2026-Q1?</td><td>ranking</td></tr>
+            <tr><td>Q005</td><td>What were weekly Vylentra TRx in September 2026?</td><td>trend / time</td></tr>
+            <tr><td>Q006</td><td>How did Kestravo TRx change from 2026-Q1 to 2026-Q2?</td><td>period comparison</td></tr>
+            <tr><td>Q007</td><td>What was the average weekly Zorvela TRx per sales rep in 2026-Q2?</td><td>rep / aggregation</td></tr>
+            <tr><td>Q008</td><td>Which region had the highest Zorvela NRx in 2026-Q3?</td><td>region / ranking</td></tr>
+          </tbody></table></div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 02 ===================== -->
+<section class="slide step" id="step-gen" data-title="02 · Generate variations" data-step="gen">
+  <div class="head">
+    <p class="eyebrow">Step 02 of 12 · Build the benchmark</p>
+    <h2>SQL-grounded variations from one SQL statement</h2>
+    <p class="lede">The model reads each ground-truth query, extracts its semantic contract, and writes one variation per category. The output lands in Delta.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 2, a Python script that writes phrasing variations, calling an LLM through an external gateway.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">ai_query()</span><span class="chip">system.ai foundation model</span><span class="chip">Unity Gateway</span></div><p><code>ai_query('system.ai.claude-sonnet-4-6', …)</code> runs inside SQL, row by row, over the core table. Calls are recorded in the Unity Gateway usage table with requester and tokens.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>64</b><span>variations across 8 categories, generated in a single statement</span></li><li><b>0</b><span>generation errors (errors are captured per row with <code>failOnError =&gt; false</code>)</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>Claude models reject <code>responseFormat =&gt; '{"type":"json_object"}'</code> in <code>ai_query</code>. Ask for raw JSON in the prompt and extract it with <code>regexp_extract</code>. Generate variations once and persist them; never re-generate on read.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">03a_generate_variations.sql</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-sql">CREATE OR REPLACE TABLE {{schema}}.variations_raw AS
+WITH gen AS (
+  SELECT core_id, arguments,
+    ai_query(
+      '{{model}}',
+      concat(
+        'You generate benchmark question variations to stress-test a text-to-SQL agent for a pharma commercial team. ',
+        'Parse the ground-truth SQL to extract its semantic contract (metric, filters, time period, grouping). ',
+        'Return ONLY a raw JSON object (no markdown) {"variations":[{"category":"...","question":"..."}]} with exactly one variation for EACH category: ',
+        'paraphrase, conversational, contextual_pronoun, time_variation, shorthand_typo, edge_case_short, filter_sensitivity, adversarial. ',
+        'Rules: all categories except filter_sensitivity and adversarial MUST keep the exact same semantics as the SQL. ',
+        'time_variation must refer to the SAME period differently (e.g. "April through June 2026" for 2026-Q2). ',
+        'contextual_pronoun uses I/me/my only if a sales_rep_id argument exists, otherwise refers to "our team". ',
+        'filter_sensitivity changes exactly one filter value. adversarial is ambiguous or tricky phrasing. ',
+        'Core question: ', question, '\nArguments: ', coalesce(arguments, 'none'), '\nGround-truth SQL: ', gt_sql),
+      failOnError =&gt; false,
+      modelParameters =&gt; named_struct('temperature', CAST(0.7 AS DOUBLE), 'max_tokens', 1500)
+    ) AS r
+  FROM {{schema}}.core_questions
+)
+SELECT core_id, arguments, v.category, v.question, r.errorMessage AS gen_error
+FROM gen
+LATERAL VIEW explode(from_json(regexp_extract(r.result, '(?s)\\{.*\\}', 0), 'STRUCT&lt;variations: ARRAY&lt;STRUCT&lt;category: STRING, question: STRING&gt;&gt;&gt;').variations) AS v</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>variations_raw for Q001 · "What were my Zorvela TRx in 2026-Q2?"</h4>
+          <div class="tw"><table class="out"><thead><tr><th>category</th><th>question</th></tr></thead><tbody>
+            <tr><td>paraphrase</td><td>What was my total Zorvela TRx volume during Q2 2026?</td></tr>
+            <tr><td>conversational</td><td>Hey, can you pull up how many Zorvela TRx I had in Q2 2026?</td></tr>
+            <tr><td>contextual_pronoun</td><td>What were my Zorvela TRx in Q2 2026?</td></tr>
+            <tr><td>time_variation</td><td>What were my Zorvela TRx from April through June 2026?</td></tr>
+            <tr><td>shorthand_typo</td><td>Wat were my zorvla TRx in Q2 2026?</td></tr>
+            <tr><td>edge_case_short</td><td>Zorvela TRx Q2 2026 mine?</td></tr>
+            <tr><td>filter_sensitivity</td><td>What were my Dolvenix TRx in Q2 2026?</td></tr>
+            <tr><td>adversarial</td><td>What were my Zorvela TRx and NRx totals in Q2 2026, and how did they compare to the previous quarter?</td></tr>
+          </tbody></table></div>
+          <p class="note">The last two change the meaning on purpose. Step 03 has to catch them.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 03 ===================== -->
+<section class="slide step" id="step-val" data-title="03 · Validate variations" data-step="val">
+  <div class="head">
+    <p class="eyebrow">Step 03 of 12 · Build the benchmark</p>
+    <h2>Validate every variation with <code>ai_decide()</code></h2>
+    <p class="lede">Three structured decisions per row, each with a probability. A variation enters the benchmark only if the ground-truth SQL still answers it.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 3, the variation validation suite: semantic equivalence, argument mapping, ambiguity, and category tagging.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip beta">Beta</span><span class="chip">ai_decide()</span><span class="chip">noul · choice</span></div><p><code>noul</code> questions return a probability (is it equivalent? is it ambiguous?). A <code>choice</code> question returns the category with per-label probabilities and a confidence. Thresholds route each row to valid, invalid, or needs review.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>57/72</b><span>accepted into the benchmark (64 variations plus 8 originals)</span></li><li><b>8/8</b><span>filter-changing variations rejected</span></li><li><b>7/8</b><span>adversarial variations rejected; the eighth really was equivalent</span></li><li><b>~2.5 min</b><span>for all 72 rows in one SQL statement, including cold start</span></li></ul></div>
+      
+      <div class="panel"><h3>Accepted vs rejected, by category</h3><svg class="chart" id="chartVal" role="img" aria-label="Accepted and rejected variations by category"></svg><div class="legend"><span><i style="background:var(--good)"></i>accepted</span><span><i style="background:var(--bad)"></i>rejected</span></div></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">03b_validate_variations.sql</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-sql">CREATE OR REPLACE TABLE {{schema}}.variations
+COMMENT 'Benchmark variations validated with ai_decide(). Ground truth is inherited from core_questions via core_id.'
+AS WITH src AS (
+  SELECT c.core_id, c.question AS core_question, c.arguments, c.gt_sql, 'original' AS category, c.question AS question
+  FROM {{schema}}.core_questions c
+  UNION ALL
+  SELECT v.core_id, c.question, c.arguments, c.gt_sql, v.category, v.question
+  FROM {{schema}}.variations_raw v
+  JOIN {{schema}}.core_questions c USING (core_id)
+),
+decided AS (
+  SELECT *,
+    ai_decide(
+      to_json(named_struct('core_question', core_question, 'runtime_arguments', coalesce(arguments, 'none'),
+                           'ground_truth_sql', gt_sql, 'candidate_variation', question)),
+      '{
+        "equivalent": {"type": "noul",
+          "instructions": "Is the ground-truth SQL a fully correct answer to the candidate variation, i.e. the variation asks for the same metric, the same filters and filter values, the same time period and the same grouping? Treat typos, abbreviations, informal phrasing and equivalent date ranges (e.g. April through June 2026 = 2026-Q2) as equivalent. Pronouns like I/me/my refer to the runtime argument sales_rep_id."},
+        "ambiguous": {"type": "noul",
+          "instructions": "Is the candidate variation ambiguous enough that a competent analyst could reasonably write materially different SQL for it?"},
+        "category": {"type": "choice",
+          "instructions": "Which variation style best describes the candidate relative to the core question?",
+          "criteria": {"original": "Identical to the core question",
+                       "paraphrase": "Reworded with the same meaning",
+                       "conversational": "Informal, chatty phrasing",
+                       "contextual_pronoun": "Uses I/me/my/our to refer to the user context",
+                       "time_variation": "Refers to the same time period in a different way",
+                       "shorthand_typo": "Contains typos, abbreviations or poor grammar",
+                       "edge_case_short": "Very short or terse keyword-style phrasing",
+                       "filter_sensitivity": "Changes one filter value so the meaning differs",
+                       "adversarial": "Ambiguous, multi-part or tricky phrasing"}}
+      }'
+    ) AS d
+  FROM src
+)
+SELECT
+  concat(core_id, '-', lpad(cast(row_number() OVER (PARTITION BY core_id ORDER BY category = 'original' DESC, category) - 1 AS STRING), 2, '0')) AS test_id,
+  core_id, question, arguments, category AS generated_category,
+  d:response.answers.category.choice::STRING            AS decided_category,
+  round(d:response.answers.equivalent.probability::DOUBLE, 3) AS p_equivalent,
+  round(d:response.answers.ambiguous.probability::DOUBLE, 3)  AS p_ambiguous,
+  round(d:response.answers.category.confidence::DOUBLE, 3)    AS category_confidence,
+  CASE WHEN d:error_message IS NOT NULL AND d:error_message::STRING IS NOT NULL THEN 'error'
+       WHEN d:response.answers.equivalent.probability::DOUBLE &gt;= 0.8 AND d:response.answers.ambiguous.probability::DOUBLE &lt; 0.5 THEN 'valid'
+       WHEN d:response.answers.equivalent.probability::DOUBLE &lt; 0.3 THEN 'invalid'
+       ELSE 'needs_review' END AS status,
+  d:error_message::STRING AS decide_error
+FROM decided</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Edge cases from the validated table</h4>
+          <div class="tw"><table class="out"><thead><tr><th>test_id</th><th>generated as</th><th class="num">P(equiv)</th><th>status</th><th>question</th></tr></thead><tbody>
+            <tr><td>Q004-01</td><td>adversarial</td><td class="num">1.00</td><td class="ok">valid</td><td>Which territories were most active for Telmarix in early 2026 — give me the top 5 by prescriptions, but only if you're looking at the right time window?</td></tr>
+            <tr><td>Q006-01</td><td>adversarial</td><td class="num">0.20</td><td class="no">invalid</td><td>How did Kestravo prescriptions perform in 2026 — did they go up or down, and by how much across the quarters?</td></tr>
+            <tr><td>Q001-01</td><td>adversarial</td><td class="num">0.00</td><td class="no">invalid</td><td>What were my Zorvela TRx and NRx totals in Q2 2026, and how did they compare to the previous quarter?</td></tr>
+            <tr><td>Q006-04</td><td>edge_case_short</td><td class="num">1.00</td><td class="ok">valid</td><td>Kestravo TRx Q1 vs Q2 2026 change?</td></tr>
+            <tr><td>Q007-08</td><td>time_variation</td><td class="num">1.00</td><td class="ok">valid</td><td>What was the average weekly Zorvela TRx per sales rep from April through June 2026?</td></tr>
+          </tbody></table></div>
+          <p class="note">The category decision is advisory: ai_decide sometimes labels a pronoun variation as a paraphrase, which does not affect validity.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 04 ===================== -->
+<section class="slide step" id="step-sync" data-title="04 · Sync to Genie" data-step="sync">
+  <div class="head">
+    <p class="eyebrow">Step 04 of 12 · Build the benchmark</p>
+    <h2>Sync benchmarks from Delta into the Genie agent</h2>
+    <p class="lede">A sync job rebuilds the agent's benchmark list from the validated table and replaces only that section of the agent configuration.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Usually not a separate stage. It is what lets the native benchmark tooling run on a Delta master set instead of hand-entered benchmarks.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Genie agent management API</span><span class="chip">serialized_space</span></div><p><code>get_space</code> returns the full configuration, the job swaps <code>benchmarks.questions</code>, and <code>update_space</code> writes it back. Data sources, instructions, and joins are untouched. Benchmark IDs are derived from <code>test_id</code>, so they stay stable across syncs.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>57</b><span>benchmarks synced; instructions and join specs preserved on every update</span></li><li><b>500</b><span>benchmark limit per agent, enforced in the job before it writes</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>IDs are 32-character hex, unique across sample questions and benchmarks, and arrays are sorted by ID. The whole configuration must stay under 3.5 MB, with at most 25,000 characters per string.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">build_benchmarks()</button><button class="tab" role="tab" aria-selected="false" type="button">main()</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-python">MAX_BENCHMARKS = 500  # documented per-agent limit
+
+
+def build_benchmarks(core_ids: list[str] | None = None) -&gt; tuple[list[dict], list[dict]]:
+    where = f"AND v.core_id IN ({','.join(sql_str(c) for c in core_ids)})" if core_ids else ""
+    rows = sql(f"""
+        SELECT v.test_id, v.core_id, v.question, v.arguments, c.gt_sql
+        FROM {SCHEMA}.variations v JOIN {SCHEMA}.core_questions c USING (core_id)
+        WHERE v.status = 'valid' {where}
+        ORDER BY v.test_id""")
+    if len(rows) &gt; MAX_BENCHMARKS:
+        raise SystemExit(f"{len(rows)} benchmarks &gt; {MAX_BENCHMARKS}; sync in batches (by core_id) instead")
+    questions, mapping = [], []
+    for r in rows:
+        text = r["question"] + (f" (context: {r['arguments']})" if r["arguments"] else "")
+        bid = bench_id(r["test_id"])
+        questions.append({"id": bid, "question": [text],
+                          "answer": [{"format": "SQL", "content": [r["gt_sql"]]}]})
+        mapping.append({"test_id": r["test_id"], "core_id": r["core_id"], "benchmark_id": bid,
+                        "gt_sql_hash": hashlib.md5(r["gt_sql"].encode()).hexdigest()})
+    return sorted(questions, key=lambda q: q["id"]), mapping</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-python">def main() -&gt; None:
+    benchmarks, mapping = build_benchmarks()
+    state = load_state()
+    if "space_id" not in state:
+        space = w.genie.create_space(
+            warehouse_id=WAREHOUSE_ID, serialized_space=json.dumps(initial_space(benchmarks)),
+            title="[POC] Pharma Commercial Rx - Genie Eval Framework",
+            description="Reference implementation (synthetic data). Benchmarks synced from Delta core_questions/variations.")
+        state = save_state(space_id=space.space_id)
+        print(f"created space {space.space_id}")
+    else:
+        current = w.genie.get_space(state["space_id"], include_serialized_space=True)
+        payload = json.loads(current.serialized_space)
+        payload["benchmarks"] = {"questions": benchmarks}
+        w.genie.update_space(state["space_id"], serialized_space=json.dumps(payload))
+        print(f"updated benchmarks on space {state['space_id']}")
+    write_mapping(mapping)
+    synced = json.loads(w.genie.get_space(state["space_id"], include_serialized_space=True).serialized_space)
+    print(f"benchmarks in space: {len(synced.get('benchmarks', {}).get('questions', []))} (expected {len(benchmarks)})")
+    print(f"text instructions preserved: {bool(synced.get('instructions', {}).get('text_instructions'))}")</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Console</h4><pre class="code"><code class="language-none">$ python3 04_sync_benchmarks.py
+created space <space_id>
+benchmarks in space: 57 (expected 57)
+text instructions preserved: True</code></pre>
+          <h4>One benchmark entry as written to serialized_space</h4><pre class="code"><code class="language-json">{
+  "id": "&lt;md5('bench:Q001-07')&gt;",
+  "question": ["What were my Zorvela TRx from April through June 2026? (context: sales_rep_id = REP001)"],
+  "answer": [{
+    "format": "SQL",
+    "content": ["SELECT SUM(trx) AS total_trx FROM {{schema}}.rx_weekly WHERE brand = 'ZORVELA' AND quarter = '2026-Q2' AND sales_rep_id = 'REP001'"]
+  }]
+}</code></pre>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 05 ===================== -->
+<section class="slide step" id="step-native" data-title="05 · Native benchmark evaluation" data-step="native">
+  <div class="head">
+    <p class="eyebrow">Step 05 of 12 · Evaluate</p>
+    <h2>Run Genie's own benchmark evaluation from code</h2>
+    <p class="lede">Start a run for all benchmarks or a chosen subset, poll until it finishes, then pull every question's result into Delta.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>An alternative to stage 4 for up to 500 questions per agent. Genie grades each answer itself, so results match what authors see in the Benchmarks tab.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip beta">Beta</span><span class="chip">Benchmark evaluation API</span><span class="chip">chat mode</span></div><p><code>genie_create_eval_run</code> accepts <code>benchmark_question_ids</code>. Without IDs it runs everything. Result details include the Genie SQL, the expected SQL, the assessment, and reason codes.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>41/57</b><span>graded GOOD (72%) on the first full run</span></li><li><b>~3.2/min</b><span>57 questions in 17.7 minutes in our workspace</span></li><li><b>0/7</b><span>for Q003 (market share) and Q007 (average per rep), the two weakest core questions</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>The API is Beta and evaluates chat mode only. Each run uses workspace capacity and stored results, so prefer fewer, larger runs, and delete old runs from the Benchmarks tab.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">05_native_eval.py</button><button class="tab" role="tab" aria-selected="false" type="button">CLI equivalent</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-python">def benchmark_ids(core_ids: list[str]) -&gt; list[str]:
+    rows = sql(f"""SELECT benchmark_id FROM {SCHEMA}.benchmark_map
+                   WHERE core_id IN ({','.join(sql_str(c) for c in core_ids)})""")
+    return [r["benchmark_id"] for r in rows]
+
+
+def run_eval(space_id: str, ids: list[str] | None) -&gt; tuple[str, float]:
+    t0 = time.time()
+    run = w.genie.genie_create_eval_run(space_id, benchmark_question_ids=ids)
+    while True:
+        r = w.genie.genie_get_eval_run(space_id, run.eval_run_id)
+        status = r.eval_run_status.value if r.eval_run_status else None
+        print(f"{time.time() - t0:5.0f}s {status} {r.num_done}/{r.num_questions}", flush=True)
+        if status not in ("RUNNING", "NOT_STARTED"):
+            return run.eval_run_id, time.time() - t0
+        time.sleep(20)
+
+
+def fetch_results(space_id: str, run_id: str) -&gt; list[dict]:
+    results, token = [], None
+    while True:
+        page = w.genie.genie_list_eval_results(space_id, run_id, page_size=100, page_token=token)
+        results += page.eval_results or []
+        token = page.next_page_token
+        if not token:
+            break
+    with ThreadPoolExecutor(8) as pool:
+        details = list(pool.map(
+            lambda r: w.genie.genie_get_eval_result_details(space_id, run_id, r.result_id).as_dict(), results))
+    return details</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-bash"># The same calls from the Databricks CLI (Beta commands)
+databricks genie genie-create-eval-run &lt;SPACE_ID&gt; \
+  --json '{"benchmark_question_ids": ["&lt;id&gt;", "&lt;id&gt;"]}'      # omit the body to run every benchmark
+
+databricks genie genie-get-eval-run &lt;SPACE_ID&gt; &lt;EVAL_RUN_ID&gt;      # poll until eval_run_status = DONE
+databricks genie genie-list-eval-results &lt;SPACE_ID&gt; &lt;EVAL_RUN_ID&gt;
+databricks genie genie-get-eval-result-details &lt;SPACE_ID&gt; &lt;EVAL_RUN_ID&gt; &lt;RESULT_ID&gt;</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Per core question, full run</h4>
+          <div class="tw"><table class="out"><thead><tr><th>core_id</th><th class="num">questions</th><th class="num">GOOD</th><th class="num">BAD</th><th class="num">needs review</th></tr></thead><tbody>
+            <tr><td>Q001</td><td class="num">7</td><td class="num ok">7</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Q002</td><td class="num">7</td><td class="num ok">6</td><td class="num no">1</td><td class="num">0</td></tr>
+            <tr><td>Q003</td><td class="num">7</td><td class="num">0</td><td class="num no">7</td><td class="num">0</td></tr>
+            <tr><td>Q004</td><td class="num">8</td><td class="num ok">8</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Q005</td><td class="num">7</td><td class="num ok">7</td><td class="num">0</td><td class="num">0</td></tr>
+            <tr><td>Q006</td><td class="num">7</td><td class="num ok">6</td><td class="num no">1</td><td class="num">0</td></tr>
+            <tr><td>Q007</td><td class="num">7</td><td class="num">0</td><td class="num no">4</td><td class="num mid">3</td></tr>
+            <tr><td>Q008</td><td class="num">7</td><td class="num ok">7</td><td class="num">0</td><td class="num">0</td></tr>
+          </tbody></table></div>
+          <h4>One result detail (abridged)</h4><pre class="code"><code class="language-json">{
+  "benchmark_question_id": "…",
+  "assessment": "BAD",
+  "assessment_reasons": ["SINGLE_CELL_DIFFERENCE", "LLM_JUDGE_INCORRECT_METRIC_CALCULATION"],
+  "actual_response": [{
+    "response_type": "SQL",
+    "response": "SELECT 100 * (try_divide(SUM(`trx`),SUM(`market_trx`))) AS `market_capture_pct` FROM … WHERE `brand` = 'ZORVELA' AND `region` = 'Northeast' AND `quarter` = '2026-Q2'",
+    "sql_execution_result": { "statement_id": "…", "status": { "state": "SUCCEEDED" } }
+  }],
+  "expected_response": [{
+    "response_type": "SQL",
+    "response": "SELECT ROUND(SUM(trx) / SUM(market_trx), 4) AS market_share FROM … WHERE brand = 'ZORVELA' AND region = 'Northeast' AND quarter = '2026-Q2'",
+    "sql_execution_result": { "statement_id": "…", "status": { "state": "SUCCEEDED" } }
+  }]
+}</code></pre>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 06 ===================== -->
+<section class="slide step" id="step-harness" data-title="06 · MLflow harness" data-step="harness">
+  <div class="head">
+    <p class="eyebrow">Step 06 of 12 · Evaluate</p>
+    <h2>An MLflow harness with no benchmark cap</h2>
+    <p class="lede">Each question is a traced Genie call through the Conversation API. Scorers run on every row, and per-core pass rates are logged as MLflow metrics.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 4, the MLflow evaluate pipeline: read the question, send it to Genie, run both SQLs, store results, track everything in MLflow.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Genie Conversation API</span><span class="chip">MLflow 3 · mlflow.genai.evaluate</span><span class="chip">MLflow Tracing</span></div><p><code>predict_fn</code> asks Genie and fetches the result rows. Three scorers (result match, ai_decide triage, recommended fix) attach feedback to each trace. Ground truth runs once per core question and is reused for every variation.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>45/57</b><span>passed (79%), with the same two weak core questions as the native run</span></li><li><b>6 min</b><span>for 57 questions with 4 workers (9.5 per minute in our workspace)</span></li><li><b>18.4 s</b><span>median Genie response time; 24.9 s at p90</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>Conversation API throughput is limited per workspace and shared by every Genie agent there. The harness retries with exponential backoff. Size throughput for 1,500-question runs with your account team.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">ask_genie / predict_fn</button><button class="tab" role="tab" aria-selected="false" type="button">main()</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-python">@mlflow.trace(span_type="TOOL")
+def ask_genie(question: str) -&gt; dict:
+    for attempt in range(6):
+        try:
+            msg = w.genie.start_conversation_and_wait(SPACE_ID, question)
+            break
+        except Exception as e:  # rate limits / transient errors: exponential backoff
+            if attempt == 5:
+                return {"status": "ERROR", "error": str(e)[:500], "genie_sql": None, "columns": [], "rows": []}
+            time.sleep(min(60, 2 ** attempt * 3))
+    out = {"status": msg.status.value if msg.status else None, "genie_sql": None, "columns": [], "rows": [],
+           "error": msg.error.error if msg.error else None, "text": None,
+           "conversation_id": msg.conversation_id, "message_id": msg.message_id}
+    for att in msg.attachments or []:
+        if att.text and att.text.content:
+            out["text"] = att.text.content
+        if att.query and att.query.query:
+            out["genie_sql"] = att.query.query
+            res = w.genie.get_message_attachment_query_result(SPACE_ID, msg.conversation_id, msg.message_id,
+                                                              att.attachment_id)
+            sr = res.statement_response
+            if sr and sr.manifest and sr.result:
+                out["columns"] = [c.name for c in sr.manifest.schema.columns]
+                out["rows"] = (sr.result.data_array or [])[:MAX_ROWS]
+    return out
+
+
+@mlflow.trace(span_type="AGENT")
+def predict_fn(question: str, test_id: str, core_id: str) -&gt; dict:
+    t0 = time.time()
+    out = ask_genie(question)
+    out["latency_s"] = round(time.time() - t0, 1)
+    return out</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-python">def main() -&gt; None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--core-ids", nargs="*")
+    ap.add_argument("--limit", type=int)
+    ap.add_argument("--workers", default="4")
+    ap.add_argument("--run-name", default="genie-eval-harness")
+    args = ap.parse_args()
+    os.environ["MLFLOW_GENAI_EVAL_MAX_WORKERS"] = args.workers
+    mlflow.set_tracking_uri(f"databricks://{PROFILE}")
+    mlflow.set_experiment(EXPERIMENT)
+
+    data = build_dataset(args.core_ids, args.limit)
+    print(f"{len(data)} questions, workers={args.workers}")
+    t0 = time.time()
+    with mlflow.start_run(run_name=args.run_name) as run:
+        res = mlflow.genai.evaluate(data=data, predict_fn=predict_fn,
+                                    scorers=[result_match, failure_triage, recommended_fix])
+        elapsed = time.time() - t0
+        persist(run.info.run_id)
+        # Core-question health logged as MLflow metrics as well
+        per_core = sql(f"""SELECT core_id, round(avg(CASE WHEN passed THEN 1 ELSE 0 END), 3) AS pass_rate, count(*) n
+                           FROM {SCHEMA}.harness_results WHERE run_id = {sql_str(run.info.run_id)} GROUP BY core_id""")
+        mlflow.log_metrics({f"core_{r['core_id']}_pass_rate": float(r["pass_rate"]) for r in per_core})
+        mlflow.log_metrics({"questions": len(data), "elapsed_s": round(elapsed),
+                            "questions_per_min": round(len(data) / (elapsed / 60), 2)})
+    print(f"run_id={run.info.run_id} elapsed={elapsed:.0f}s qpm={len(data)/(elapsed/60):.2f}")
+    for r in sorted(per_core, key=lambda x: x["core_id"]):
+        print(r)</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Metrics on the MLflow run "harness-full-v1"</h4><pre class="code"><code class="language-none">core_Q001_pass_rate        1.0
+core_Q002_pass_rate        1.0
+core_Q003_pass_rate        0.0
+core_Q004_pass_rate        1.0
+core_Q005_pass_rate        1.0
+core_Q006_pass_rate        1.0
+core_Q007_pass_rate        0.286
+core_Q008_pass_rate        1.0
+passed/mean                0.789
+failure_confidence/mean    0.954
+questions                  57
+elapsed_s                  359
+questions_per_min          9.53</code></pre>
+          <p class="note">Each of the 57 traces carries result_match, passed, failure_category, failure_confidence, semantically_equivalent_p, severity, and recommended_fix as assessments.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 07 ===================== -->
+<section class="slide step" id="step-compare" data-title="07 · Compare results" data-step="compare">
+  <div class="head">
+    <p class="eyebrow">Step 07 of 12 · Evaluate</p>
+    <h2>Compare result sets, not SQL text</h2>
+    <p class="lede">Deterministic code decides match, partial, mismatch, or error. Only rows that are not a match go to the LLM in step 08.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 5, "DataFrames match?": row counts, values, tolerance thresholds, and exact / partial / mismatch / error labels.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">MLflow code scorer</span></div><p>Values are normalized (numbers rounded, text lower-cased), column names and order are ignored, and rows are compared as multisets. If Genie returns the ground-truth values plus extra columns, the row counts as partial.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>7/7</b><span>Q003 mismatches came from one definition gap: Genie reports market share as a percentage, ground truth as a ratio</span></li><li><b>5/7</b><span>Q007 mismatches came mostly from naming: Genie returned rep IDs where ground truth shows rep names</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>Choose the rounding precision on purpose. Too strict and rounding differences fail; too loose and real errors pass. Keep the rule in code and version it with the benchmark.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">compare() + result_match</button><button class="tab out" role="tab" aria-selected="false" type="button">Example: Q003</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-python">def _norm(v):
+    if v is None:
+        return "null"
+    try:
+        return str(round(Decimal(str(v)), 1).normalize())
+    except InvalidOperation:
+        return str(v).strip().lower()
+
+
+def compare(gt_rows: list, genie_rows: list) -&gt; str:
+    gt = Counter(tuple(sorted(_norm(v) for v in r)) for r in gt_rows)
+    ge = Counter(tuple(sorted(_norm(v) for v in r)) for r in genie_rows)
+    if gt == ge:
+        return "match"
+    if len(gt_rows) == len(genie_rows) and gt_rows:
+        # Genie returned the GT values plus extra columns (e.g. extra dimension/label) -&gt; partial
+        ge_sets = [set(_norm(v) for v in r) for r in genie_rows]
+        if all(any(set(_norm(v) for v in g) &lt;= s for s in ge_sets) for g in gt_rows):
+            return "partial"
+    return "mismatch"
+
+
+@scorer
+def result_match(outputs: dict, expectations: dict) -&gt; list[Feedback]:
+    if not outputs.get("genie_sql") or outputs.get("status") != "COMPLETED":
+        label = "error"
+    else:
+        label = compare(expectations["gt_rows"], outputs["rows"])
+    return [Feedback(name="result_match", value=label,
+                     rationale=f"gt_rows={len(expectations['gt_rows'])} genie_rows={len(outputs.get('rows') or [])}"),
+            Feedback(name="passed", value=label in ("match", "partial"))]</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Ground truth (before the business-rule change)</h4><pre class="code"><code class="language-sql">SELECT ROUND(SUM(trx) / SUM(market_trx), 4) AS market_share
+FROM {{schema}}.rx_weekly
+WHERE brand = 'ZORVELA' AND region = 'Northeast' AND quarter = '2026-Q2'</code></pre>
+          <h4>Genie, for "What proportion of total market prescriptions did Zorvela account for in the Northeast region during Q2 2026?"</h4><pre class="code"><code class="language-sql">SELECT try_divide(100.0 * SUM(`trx`), SUM(`market_trx`)) AS `zorvela_market_share_pct`
+FROM {{schema}}.`rx_weekly`
+WHERE `brand` = 'ZORVELA' AND `region` = 'Northeast' AND `quarter` = '2026-Q2'</code></pre>
+          <p class="note">Same filters and the same ratio, scaled by 100. The scorer labels it mismatch; step 08 labels why.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 08 ===================== -->
+<section class="slide step" id="step-triage" data-title="08 · Triage failures" data-step="triage">
+  <div class="head">
+    <p class="eyebrow">Step 08 of 12 · Evaluate</p>
+    <h2>Triage every failure with a confidence score</h2>
+    <p class="lede"><code>ai_decide()</code> answers three questions per failure: would a business user get the same answer, what is the primary failure, and how harmful is it.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 6, the LLM-as-a-judge semantic check, and the failure classification in stage 7, usually on an external gateway.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip beta">Beta</span><span class="chip">ai_decide()</span><span class="chip">noul · choice · score</span></div><p>Nine failure categories as a <code>choice</code>, semantic equivalence as <code>noul</code>, severity as an ordinal <code>score</code>. Rows with P(equivalent) of at least 0.8 become likely false negatives; rows below 0.6 confidence go to human review; the rest are auto-triaged.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>15/16</b><span>native failures auto-triaged; 1 flagged as a likely false negative</span></li><li><b>14/16</b><span>agreement with an independent LLM judge, and 14/16 with Genie's own reason codes</span></li><li><b>0.70</b><span>the lowest confidence in the set, on one of the two disagreements</span></li></ul></div>
+      
+      <div class="panel"><h3>Primary failure category · native run</h3><svg class="chart" id="chartTriage" role="img" aria-label="Failure categories from ai_decide"></svg></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">07_triage_native.sql</button><button class="tab" role="tab" aria-selected="false" type="button">12_classifier_comparison.sql</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-sql">CREATE OR REPLACE TABLE {{schema}}.native_diagnostics
+COMMENT 'ai_decide() triage of non-GOOD native benchmark results: failure category, semantic equivalence, severity with confidences'
+AS WITH latest AS (
+  SELECT eval_run_id FROM {{schema}}.native_eval_results
+  WHERE scope = 'full' ORDER BY run_ts DESC LIMIT 1
+),
+failed AS (
+  SELECT n.*, v.question
+  FROM {{schema}}.native_eval_results n
+  JOIN latest USING (eval_run_id)
+  JOIN {{schema}}.variations v USING (test_id)
+  WHERE n.assessment &lt;&gt; 'GOOD'
+),
+decided AS (
+  SELECT *, ai_decide(
+    to_json(named_struct('question', question, 'ground_truth_sql', gt_sql, 'genie_sql', coalesce(genie_sql, '(none)'),
+                         'native_assessment', assessment, 'native_assessment_reasons', assessment_reasons)),
+    '{
+      "semantically_equivalent": {"type": "noul", "instructions": "Would a business user get the same answer from the Genie SQL as from the ground-truth SQL, ignoring column names, column order, row order and rounding?"},
+      "failure_category": {"type": "choice", "instructions": "Compare the Genie SQL with the ground-truth SQL. What is the primary reason they differ?",
+        "criteria": {
+          "missing_or_wrong_filter": "A required filter is missing, or a filter column/value is wrong",
+          "wrong_aggregation": "Wrong aggregation function, or aggregates at the wrong level",
+          "wrong_join": "Missing, extra or incorrect join",
+          "wrong_metric_definition": "Computes a different business metric or formula than the ground truth (e.g. wrong ratio or scale)",
+          "time_logic": "Wrong time period, date range, or period-comparison logic",
+          "granularity_only": "Same numbers but different grouping, extra/missing columns, ordering or LIMIT only",
+          "wrong_table_or_column": "Uses the wrong table or column",
+          "misinterpretation": "Misunderstood the intent of the question",
+          "execution_error": "Genie SQL failed or returned no result"}},
+      "severity": {"type": "score", "instructions": "How harmful is this difference for a business user?",
+        "criteria": ["Cosmetic: answer still usable", "Partially wrong: usable only with caveats", "Wrong: misleading answer"]}
+    }') AS d
+  FROM failed
+)
+SELECT eval_run_id, test_id, core_id, question, assessment, assessment_reasons, genie_sql, gt_sql,
+       d:response.answers.failure_category.choice::STRING                AS failure_category,
+       round(d:response.answers.failure_category.confidence::DOUBLE, 3)  AS failure_confidence,
+       d:response.answers.failure_category.probabilities                 AS failure_probabilities,
+       round(d:response.answers.semantically_equivalent.probability::DOUBLE, 3) AS p_semantically_equivalent,
+       d:response.answers.severity.score::DOUBLE                         AS severity,
+       round(d:response.answers.severity.confidence::DOUBLE, 3)          AS severity_confidence,
+       CASE WHEN d:response.answers.semantically_equivalent.probability::DOUBLE &gt;= 0.8 THEN 'likely_false_negative'
+            WHEN d:response.answers.failure_category.confidence::DOUBLE &lt; 0.6 THEN 'human_review'
+            ELSE 'auto_triaged' END                                     AS triage_route,
+       d:error_message::STRING AS decide_error
+FROM decided</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-sql">CREATE OR REPLACE TABLE {{schema}}.classifier_comparison AS
+WITH base AS (
+  SELECT d.*,
+    CASE
+      WHEN assessment_reasons LIKE '%EMPTY_RESULT%' THEN 'execution_error'
+      WHEN assessment_reasons LIKE '%INCORRECT_METRIC_CALCULATION%' THEN 'wrong_metric_definition'
+      WHEN assessment_reasons LIKE '%MISSING_OR_INCORRECT_JOIN%' THEN 'wrong_join'
+      WHEN assessment_reasons LIKE '%MISSING_OR_INCORRECT_FILTER%' THEN 'missing_or_wrong_filter'
+      WHEN assessment_reasons LIKE '%INCOMPLETE_OR_PARTIAL_OUTPUT%' OR assessment_reasons LIKE '%FORMATTING_ERROR%' THEN 'granularity_only'
+      ELSE 'other' END AS native_category
+  FROM {{schema}}.native_diagnostics d
+)
+SELECT test_id, core_id, native_category, failure_category AS ai_decide_category, failure_confidence,
+  lower(trim(regexp_extract(ai_query('{{model}}',
+    concat('Classify the primary reason the Genie SQL differs from the ground-truth SQL. Answer with exactly one label from: ',
+           'missing_or_wrong_filter, wrong_aggregation, wrong_join, wrong_metric_definition, time_logic, granularity_only, ',
+           'wrong_table_or_column, misinterpretation, execution_error.',
+           '\nQuestion: ', question, '\nGround-truth SQL: ', gt_sql, '\nGenie SQL: ', coalesce(genie_sql, '(none)'),
+           '\nNative assessment reasons: ', assessment_reasons),
+    failOnError =&gt; false).result, '([a-z_]+)', 1))) AS llm_judge_category
+FROM base</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>native_diagnostics (6 of 16 rows)</h4>
+          <div class="tw"><table class="out"><thead><tr><th>test_id</th><th>Genie grade · reasons</th><th>ai_decide category</th><th class="num">conf.</th><th class="num">P(equiv)</th><th class="num">severity</th><th>route</th></tr></thead><tbody>
+            <tr><td>Q003-03</td><td>BAD · SINGLE_CELL_DIFFERENCE, INCORRECT_METRIC_CALCULATION</td><td>wrong_metric_definition</td><td class="num">0.96</td><td class="num">0.05</td><td class="num">1.6</td><td>auto_triaged</td></tr>
+            <tr><td>Q003-00</td><td>BAD · SINGLE_CELL_DIFFERENCE, MISSING_OR_INCORRECT_FILTER</td><td>missing_or_wrong_filter</td><td class="num mid">0.70</td><td class="num">0.10</td><td class="num">1.8</td><td>auto_triaged</td></tr>
+            <tr><td>Q007-00</td><td>BAD · RESULT_MISSING_COLUMNS, MISSING_OR_INCORRECT_JOIN</td><td>wrong_join</td><td class="num">0.90</td><td class="num">0.10</td><td class="num">1.0</td><td>auto_triaged</td></tr>
+            <tr><td>Q007-02</td><td>BAD · RESULT_MISSING_COLUMNS, INCOMPLETE_OR_PARTIAL_OUTPUT</td><td>granularity_only</td><td class="num">0.99</td><td class="num">0.00</td><td class="num">1.9</td><td>auto_triaged</td></tr>
+            <tr><td>Q007-03</td><td>NEEDS_REVIEW · INCORRECT_METRIC_CALCULATION</td><td>wrong_metric_definition</td><td class="num">0.90</td><td class="num ok">0.85</td><td class="num">0.2</td><td class="ok">likely_false_negative</td></tr>
+            <tr><td>Q002-03</td><td>BAD · EMPTY_RESULT</td><td>execution_error</td><td class="num">1.00</td><td class="num">0.00</td><td class="num">2.0</td><td>auto_triaged</td></tr>
+          </tbody></table></div>
+          <h4>Raw ai_decide() response</h4><pre class="code"><code class="language-json">{
+  "error_message": null,
+  "metadata": { "version": "1.0" },
+  "response": {
+    "answers": {
+      "failure": {
+        "type": "choice",
+        "choice": "missing_filter",
+        "confidence": 0.93,
+        "probabilities": { "missing_filter": 0.95, "wrong_aggregation": 0.03, "wrong_join": 0.02 }
+      }
+    }
+  }
+}</code></pre>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 09 ===================== -->
+<section class="slide step" id="step-recommend" data-title="09 · Recommend fixes" data-step="recommend">
+  <div class="head">
+    <p class="eyebrow">Step 09 of 12 · Improve</p>
+    <h2>Recommend fixes through a governed model service</h2>
+    <p class="lede">One recommendation per core question and failure pattern, generated through a Unity Gateway model service that can route to the model you approve, including your own gateway.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 7, the diagnostic report with failure reason and recommendation, generated by an LLM on an external gateway.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Unity Gateway model service</span><span class="chip">OpenAI-compatible endpoint</span><span class="chip">system.ai.*</span></div><p>The model service is a Unity Catalog object with its own permissions, routing, and usage log. Python calls it through <code>/ai-gateway/mlflow/v1/chat/completions</code>. SQL steps use <code>ai_query('system.ai.&lt;model&gt;')</code>.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>9</b><span>failure patterns, 9 recommendations, each one concrete enough to paste into the agent</span></li><li><b>26</b><span>model-service calls logged in <code>system.ai_gateway.usage</code> with requester and tokens</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>From SQL, call <code>system.ai</code> models by name; custom model services are called from Python or REST. Not every newest model supports batch <code>ai_query</code>; list what your workspace offers first.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">create model service</button><button class="tab" role="tab" aria-selected="false" type="button">gateway_chat()</button><button class="tab" role="tab" aria-selected="false" type="button">07b_recommendations.sql</button><button class="tab" role="tab" aria-selected="false" type="button">usage query</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-bash"># A Unity Catalog model service: governed, permissioned, logged
+databricks ai-gateway create-model-service schemas/{{schema}} genie_eval_llm --json '{
+  "comment": "Governed LLM for Genie evaluation (variation generation, diagnostics)",
+  "config": {"routing": {"destinations": [
+    {"name": "primary",
+     "destination_type": "DESTINATION_TYPE_PAY_PER_TOKEN_FOUNDATION_MODEL",
+     "pay_per_token_config": {"model": "models/system.ai.databricks-claude-sonnet-4-6"},
+     "traffic_percentage": 100}
+  ]}}
+}'
+
+# Response (abridged)
+#   "name": "model-services/{{schema}}.genie_eval_llm",
+#   "supported_api_types": ["mlflow/v1/chat/completions", "mlflow/v1/responses",
+#                           "anthropic/v1/messages", "cursor/v1/chat/completions"]
+
+# To route to your own gateway instead, register it as a Custom model provider service
+# (endpoint URL + bearer token or named header) and point the destination at it.</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-python">MODEL_SERVICE = f"{SCHEMA}.genie_eval_llm"  # Unity Gateway model service: a hosted model, or your own gateway as a Custom provider
+
+
+def gateway_chat(prompt: str) -&gt; str:
+    resp = w.api_client.do("POST", "/ai-gateway/mlflow/v1/chat/completions", body={
+        "model": MODEL_SERVICE, "max_tokens": 200, "temperature": 0,
+        "messages": [{"role": "user", "content": prompt}]})
+    return resp["choices"][0]["message"]["content"].strip()
+
+
+@scorer
+def recommended_fix(inputs: dict, outputs: dict, expectations: dict) -&gt; Feedback:
+    if outputs.get("genie_sql") and compare(expectations["gt_rows"], outputs.get("rows") or []) == "match":
+        return Feedback(name="recommended_fix", value="none")
+    fix = gateway_chat(
+        "You tune a Databricks Genie agent. Given a benchmark failure, propose ONE concise change "
+        "(a text instruction, SQL expression/measure, or column description) that would fix this class of error "
+        "for all similar questions. Max 2 sentences, no preamble.\n"
+        f"Question: {inputs['question']}\nGround-truth SQL: {expectations['gt_sql']}\n"
+        f"Genie SQL: {outputs.get('genie_sql') or '(none)'}\nGenie error: {outputs.get('error')}")
+    return Feedback(name="recommended_fix", value=fix)</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-sql">CREATE OR REPLACE TABLE {{schema}}.native_recommendations
+COMMENT 'One recommended Genie fix per core_id x failure_category (LLM via ai_query on a system.ai model)'
+AS WITH patterns AS (
+  SELECT core_id, failure_category, count(*) AS n_failures,
+         first(question) AS example_question, first(genie_sql) AS example_genie_sql, first(gt_sql) AS gt_sql
+  FROM {{schema}}.native_diagnostics
+  WHERE triage_route &lt;&gt; 'likely_false_negative'
+  GROUP BY core_id, failure_category
+)
+SELECT *, ai_query('{{model}}',
+  concat('You tune a Databricks Genie agent. Propose ONE concise change (a text instruction, SQL measure/expression, ',
+         'or column description) that fixes this failure pattern for all similar questions. Max 2 sentences, no preamble.',
+         '\nFailure category: ', failure_category, '\nExample question: ', example_question,
+         '\nGround-truth SQL: ', gt_sql, '\nGenie SQL: ', coalesce(example_genie_sql, '(none)')),
+  failOnError =&gt; false).result AS recommended_fix
+FROM patterns</code></pre></div>
+        <div role="tabpanel" hidden><pre class="code"><code class="language-sql">-- Every governed call, by service and caller
+SELECT service_name, destination_model, invocation_metadata.source AS source, api_type,
+       count(*) AS requests, sum(total_tokens) AS tokens
+FROM system.ai_gateway.usage
+WHERE event_time &gt; current_timestamp() - INTERVAL 4 HOURS
+  AND requester = current_user()
+GROUP BY ALL
+ORDER BY requests DESC</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>native_recommendations (3 of 9)</h4>
+          <div class="tw"><table class="out"><thead><tr><th>core · pattern</th><th class="num">n</th><th>recommended fix</th></tr></thead><tbody>
+            <tr><td>Q003 · wrong_metric_definition</td><td class="num">5</td><td>Add this instruction to the Genie space: "Market share must always be expressed as a decimal proportion (e.g., 0.1234), calculated as ROUND(SUM(trx) / SUM(market_trx), 4), never multiplied by 100 or expressed as a percentage."</td></tr>
+            <tr><td>Q007 · wrong_join</td><td class="num">3</td><td>Add this instruction to the Genie space: "When answering questions about sales reps, always JOIN rx_weekly to rep_territory on sales_rep_id to resolve rep_name, and display rep_name instead of sales_rep_id in results."</td></tr>
+            <tr><td>Q002 · execution_error</td><td class="num">1</td><td>Add a column description for the quarter column stating: "Formatted as 'YYYY-QN' (e.g., '2026-Q2'); use this column to filter by quarter instead of deriving it from date fields."</td></tr>
+          </tbody></table></div>
+          <h4>system.ai_gateway.usage</h4>
+          <div class="tw"><table class="out"><thead><tr><th>source</th><th>service</th><th class="num">requests</th><th class="num">tokens</th></tr></thead><tbody>
+            <tr><td>EXTERNAL_CLIENT</td><td>{{schema}}.genie_eval_llm</td><td class="num">26</td><td class="num">13,026</td></tr>
+            <tr><td>AI_QUERY</td><td>system.ai.claude-sonnet-4-6</td><td class="num">18</td><td class="num">5,089</td></tr>
+          </tbody></table></div>
+          <p class="note">Snapshot taken while ingestion was still catching up on recent SQL calls.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 10 ===================== -->
+<section class="slide step" id="step-health" data-title="10 · Core-question health" data-step="health">
+  <div class="head">
+    <p class="eyebrow">Step 10 of 12 · Improve</p>
+    <h2>Health per core question, across full and selective runs</h2>
+    <p class="lede">The latest result for every question, from whichever run touched it last, grouped by <code>core_id</code> with an 80% health threshold.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>A core health view: per-core pass rate and a Healthy / Needs attention flag, instead of one overall score.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Delta view</span><span class="chip">AI/BI dashboard</span><span class="chip">MLflow metrics</span></div><p>One view unifies native and harness results and keeps only the newest result per question, so a selective re-run updates the core it touched. The AI/BI dashboard reads the view; the same pass rates are logged as MLflow run metrics.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>2/8</b><span>core questions flagged on the first pass (Q003, Q007), by both evaluation paths</span></li><li><b>1</b><span>dashboard with pass rate per core question, failure categories, and a drill-down to Genie SQL</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>Show both evaluation paths side by side. Q007 is Healthy in the harness (86%) but still needs review natively, because the native grader is stricter about rounding.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">08b_core_health_current.sql</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-sql">CREATE OR REPLACE VIEW {{schema}}.core_health_current
+COMMENT 'Current core-question health: latest result per test_id per source (full + selective re-runs), aggregated by core_id'
+AS WITH unified AS (
+  SELECT 'native_eval_run' AS source, eval_run_id AS run_id, run_ts, test_id, core_id, assessment = 'GOOD' AS passed
+  FROM {{schema}}.native_eval_results WHERE test_id IS NOT NULL
+  UNION ALL
+  SELECT 'mlflow_harness', run_id, run_ts, test_id, core_id, passed
+  FROM {{schema}}.harness_results
+),
+latest AS (
+  SELECT * FROM unified QUALIFY ROW_NUMBER() OVER (PARTITION BY source, test_id ORDER BY run_ts DESC) = 1
+)
+SELECT l.source, l.core_id, concat(l.core_id, ' - ', c.question) AS core_label, max(l.run_ts) AS last_evaluated,
+       count(*) AS variations, count_if(passed) AS pass, count_if(NOT passed) AS fail,
+       round(avg(CASE WHEN passed THEN 1.0 ELSE 0.0 END), 3) AS pass_rate,
+       CASE WHEN avg(CASE WHEN passed THEN 1.0 ELSE 0.0 END) &gt;= 0.8 THEN 'Healthy' ELSE 'Needs attention' END AS health_status
+FROM latest l JOIN {{schema}}.core_questions c USING (core_id)
+GROUP BY l.source, l.core_id, c.question</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>core_health_current, after steps 11 and 12</h4>
+          <div class="tw"><table class="out"><thead><tr><th>core_id</th><th class="num">native pass</th><th>native status</th><th class="num">harness pass</th><th>harness status</th></tr></thead><tbody>
+            <tr><td>Q001</td><td class="num">1.000</td><td class="ok">Healthy</td><td class="num">1.000</td><td class="ok">Healthy</td></tr>
+            <tr><td>Q002</td><td class="num">0.857</td><td class="ok">Healthy</td><td class="num">1.000</td><td class="ok">Healthy</td></tr>
+            <tr><td>Q003</td><td class="num">1.000</td><td class="ok">Healthy</td><td class="num">0.000</td><td class="no">Needs attention</td></tr>
+            <tr><td>Q004</td><td class="num">1.000</td><td class="ok">Healthy</td><td class="num">1.000</td><td class="ok">Healthy</td></tr>
+            <tr><td>Q005</td><td class="num">1.000</td><td class="ok">Healthy</td><td class="num">1.000</td><td class="ok">Healthy</td></tr>
+            <tr><td>Q006</td><td class="num">0.857</td><td class="ok">Healthy</td><td class="num">1.000</td><td class="ok">Healthy</td></tr>
+            <tr><td>Q007</td><td class="num">0.000</td><td class="no">Needs attention</td><td class="num">0.857</td><td class="ok">Healthy</td></tr>
+            <tr><td>Q008</td><td class="num">1.000</td><td class="ok">Healthy</td><td class="num">1.000</td><td class="ok">Healthy</td></tr>
+          </tbody></table></div>
+          <p class="note">Q003 was re-run natively after its ground-truth update, and Q007 in the harness after its instruction fix. Each path shows the latest result it holds.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 11 ===================== -->
+<section class="slide step" id="step-bulk" data-title="11 · Bulk ground-truth update" data-step="bulk">
+  <div class="head">
+    <p class="eyebrow">Step 11 of 12 · Improve</p>
+    <h2>Update ground truth once, re-evaluate only what changed</h2>
+    <p class="lede">The business redefines market share as a percentage. One update to Q003 reaches all seven of its variations, and only those seven are re-run.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Needed: single-point update, atomic propagation, selective re-evaluation, and an audit trail of who changed what and why.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Delta UPDATE + CDF</span><span class="chip ga">GA</span><span class="chip">Agent management API</span><span class="chip beta">Beta</span><span class="chip">Evaluation API subset</span></div><p>Update the core row, run the sync from step 04, then start an evaluation run with that core question's <code>benchmark_question_ids</code>. <code>table_changes()</code> returns the previous and new SQL with the author and reason.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>1 → 7</b><span>one update changed exactly 7 variations; the other 50 benchmarks did not change</span></li><li><b>144 s</b><span>for the selective evaluation of those 7 questions</span></li><li><b>0 → 100%</b><span>Q003 pass rate after the update</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>When several core questions change on the same day, put all their IDs in one selective run rather than one run per core question.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">09_bulk_gt_update.py</button><button class="tab out" role="tab" aria-selected="false" type="button">Example output</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-python">"""Bulk ground-truth update demo: update ground truth ONCE at core_id level -&gt; propagate to all variations -&gt; re-run only that core.
+
+Scenario: the business redefines market share to be reported as a percentage, so Q003's ground truth is outdated.
+"""
+import subprocess
+import sys
+
+from common import SCHEMA, sql, sql_str
+
+CORE_ID = "Q003"
+NEW_GT = (f"SELECT 100 * SUM(trx) / SUM(market_trx) AS market_share_pct FROM {SCHEMA}.rx_weekly "
+          "WHERE brand = 'ZORVELA' AND region = 'Northeast' AND quarter = '2026-Q2'")
+
+before = {r["test_id"]: r["gt_sql_hash"] for r in sql(f"SELECT test_id, gt_sql_hash FROM {SCHEMA}.benchmark_map")}
+
+# 1. single-point update, attributed and explained (Delta history + CDF give the audit trail)
+sql(f"""UPDATE {SCHEMA}.core_questions
+        SET gt_sql = {sql_str(NEW_GT)}, updated_by = current_user(),
+            update_reason = 'business rule change: market share reported as percentage'
+        WHERE core_id = {sql_str(CORE_ID)}""")
+
+# 2. propagate atomically to the Genie agent (only the benchmarks section of serialized_space is replaced)
+subprocess.run([sys.executable, "04_sync_benchmarks.py"], check=True)
+
+after = {r["test_id"]: r["gt_sql_hash"] for r in sql(f"SELECT test_id, gt_sql_hash FROM {SCHEMA}.benchmark_map")}
+changed = sorted(t for t in after if before.get(t) != after[t])
+print(f"variations whose ground truth changed: {len(changed)} -&gt; {changed}")
+assert all(t.startswith(CORE_ID) for t in changed), "propagation leaked outside the core question"
+
+# 3. audit trail
+for r in sql(f"""SELECT _change_type, core_id, updated_by, update_reason, _commit_version, _commit_timestamp
+                 FROM table_changes('{SCHEMA}.core_questions', 1)
+                 WHERE core_id = {sql_str(CORE_ID)} ORDER BY _commit_version"""):
+    print(r)
+
+# 4. selective re-evaluation: only this core question's variations
+subprocess.run([sys.executable, "05_native_eval.py", "--core-ids", CORE_ID], check=True)</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Console (abridged)</h4><pre class="code"><code class="language-none">$ python3 09_bulk_gt_update.py
+updated benchmarks on space <space_id>
+benchmarks in space: 57 (expected 57)
+text instructions preserved: True
+variations whose ground truth changed: 7 -&gt; ['Q003-00', 'Q003-02', 'Q003-03', 'Q003-04', 'Q003-06', 'Q003-07', 'Q003-08']
+
+table_changes('core_questions') for Q003
+  v1   insert            updated_by=seed                        reason=initial load
+  v4   update_postimage  updated_by=you@example.com  reason=fix: restore string literal quotes
+  v10  update_postimage  updated_by=you@example.com  reason=business rule change: market share reported as percentage
+
+scope=core:Q003 questions=7
+    1s RUNNING 0/7
+   63s RUNNING 3/7
+  124s RUNNING 6/7
+  144s DONE 7/7
+run <eval_run_id>: 7 results in 144s (2.9 q/min)
+{'core_id': 'Q003', 'n': '7', 'good': '7', 'bad': '0', 'other': '0'}</code></pre>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== STEP 12 ===================== -->
+<section class="slide step" id="step-loop" data-title="12 · Improvement loop" data-step="loop">
+  <div class="head">
+    <p class="eyebrow">Step 12 of 12 · Improve</p>
+    <h2>Apply a recommendation and measure it on the affected core only</h2>
+    <p class="lede">The Q007 recommendation from step 09 becomes a Genie instruction through the API. Only Q007's seven variations are re-evaluated.</p>
+    <div class="strip"></div>
+  </div>
+  <div class="step-grid">
+    <div class="facts">
+      <div class="fact"><h3>In a custom pipeline</h3><p>Stage 8: data scientists update instructions, definitions, synonyms, and schemas, then re-run the affected variations and track regressions.</p></div>
+      <div class="fact"><h3>On Databricks</h3><div class="chips"><span class="chip ga">GA</span><span class="chip">Agent management API</span><span class="chip">Selective re-run</span></div><p>The script appends the instruction to <code>text_instructions</code> and leaves the benchmarks untouched. The harness and the native evaluation then run with <code>--core-ids Q007</code>.</p></div>
+      <div class="fact"><h3>What we saw</h3><ul class="metrics"><li><b>29 → 86%</b><span>Q007 harness pass rate after one instruction</span></li><li><b>4 → 0</b><span>native BAD grades; all 7 moved to needs review</span></li><li><b>0.22–0.70</b><span>ai_decide equivalence for those 7, so they stay with a human reviewer</span></li></ul></div>
+      
+      <div class="fact watch"><h3>Watch for</h3><p>Genie answers vary slightly between identical runs (7 needs-review in one run, 6 plus 1 BAD in another). Judge a change by the core question's pass rate across its variations, not by one run.</p></div>
+    </div>
+    <div class="codepanel">
+      <div class="cp-head"><div class="tabs" role="tablist"><button class="tab" role="tab" aria-selected="true" type="button">11_apply_instruction_fix.py</button><button class="tab out" role="tab" aria-selected="false" type="button">Before and after</button></div><button class="copy" type="button">Copy</button></div>
+      <div class="panels">
+        <div role="tabpanel"><pre class="code"><code class="language-python">"""Improvement loop: apply the triage recommendation for Q007 (show rep_name, not sales_rep_id) as a Genie
+text instruction, preserving everything else in serialized_space. Re-evaluate only the affected core afterwards:
+  uv run ... python 06_custom_harness.py --core-ids Q007 --run-name harness-Q007-after-fix
+"""
+import json
+
+from common import load_state, w
+
+FIX = ("When reporting metrics per sales rep, join rep_territory on sales_rep_id and return rep_name "
+       "(not sales_rep_id) as the rep column, one row per rep.\n")
+
+space_id = load_state()["space_id"]
+payload = json.loads(w.genie.get_space(space_id, include_serialized_space=True).serialized_space)
+content = payload["instructions"]["text_instructions"][0]["content"]
+if FIX not in content:
+    content.append(FIX)
+    w.genie.update_space(space_id, serialized_space=json.dumps(payload))
+after = json.loads(w.genie.get_space(space_id, include_serialized_space=True).serialized_space)
+print("instruction lines:", len(after["instructions"]["text_instructions"][0]["content"]),
+      "| benchmarks preserved:", len(after["benchmarks"]["questions"]))</code></pre></div>
+        <div role="tabpanel" hidden><div class="out-wrap">
+          <h4>Q007 · average weekly Zorvela TRx per rep</h4>
+          <div class="tw"><table class="out"><thead><tr><th>measure</th><th class="num">before</th><th class="num">after</th></tr></thead><tbody>
+            <tr><td>Harness pass rate</td><td class="num no">0.286</td><td class="num ok">0.857</td></tr>
+            <tr><td>Native GOOD / BAD / needs review</td><td class="num">0 / 4 / 3</td><td class="num">0 / 0 / 7</td></tr>
+            <tr><td>Genie returns rep_name</td><td class="num no">no</td><td class="num ok">yes</td></tr>
+          </tbody></table></div>
+          <h4>Instruction added</h4><pre class="code"><code class="language-none">When reporting metrics per sales rep, join rep_territory on sales_rep_id and return rep_name
+(not sales_rep_id) as the rep column, one row per rep.</code></pre>
+          <p class="note">What remains is a definition choice: ground truth uses ROUND(AVG(trx), 1), Genie uses SUM(trx) / COUNT(DISTINCT week). Add a measure to the agent, or relax the ground truth.</p>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== RESULTS ===================== -->
+<section class="slide" id="results" data-title="Results">
+  <div class="head">
+    <p class="eyebrow">Results on synthetic data</p>
+    <h2>Both evaluation paths found the same two weak core questions</h2>
+    <p class="lede">Each was fixed with a targeted change and verified with a selective run, without re-running the full benchmark.</p>
+  </div>
+  <div class="kpis">
+    <div class="kpi"><b>57</b><span>validated benchmark questions, evaluated two ways</span></div>
+    <div class="kpi"><b>72% · 79%</b><span>first-pass rate: native evaluation · MLflow harness</span></div>
+    <div class="kpi"><b>14/16</b><span>failure categories matched an independent judge</span></div>
+    <div class="kpi hl"><b>144 s</b><span>selective re-run after one ground-truth update</span></div>
+  </div>
+  <div class="panel">
+    <h3>Pass rate by core question</h3>
+    <svg class="chart" id="chartCore" role="img" aria-label="Pass rate by core question for native evaluation and MLflow harness, with values after fixes"></svg>
+    <div class="legend"><span><i style="background:var(--navy)"></i>native evaluation, first run</span><span><i style="background:var(--good)"></i>MLflow harness, first run</span><span><i class="ring"></i>after the targeted fix</span></div>
+  </div>
+</section>
+
+<!-- ===================== GATEWAY ===================== -->
+<section class="slide" id="gateway" data-title="Governing the LLM steps">
+  <div class="head">
+    <p class="eyebrow">Replacing the external LLM dependency</p>
+    <h2>Two ways to govern the LLM steps with Unity Gateway</h2>
+    <p class="lede">Both put model access under Unity Catalog permissions and record every call in a system table.</p>
+  </div>
+  <div class="options">
+    <div class="panel option">
+      <h3>Option A</h3>
+      <div class="t">Databricks-hosted foundation models</div>
+      <ul>
+        <li>No setup: call <code>system.ai.&lt;model&gt;</code> from SQL <code>ai_query()</code> or the OpenAI-compatible endpoint</li>
+        <li>Used in the prototype for variation generation and SQL recommendations</li>
+        <li><code>ai_decide()</code> also runs on Databricks-hosted models</li>
+      </ul>
+      <div class="flowline"><span>ai_query()</span><em>→</em><span>system.ai.claude-sonnet-4-6</span><em>→</em><span>usage table</span></div>
+    </div>
+    <div class="panel option">
+      <h3>Option B</h3>
+      <div class="t">Your existing gateway, governed in Unity Catalog</div>
+      <ul>
+        <li>Register it as a Custom model provider (endpoint URL plus bearer token or header)</li>
+        <li>Wrap it in a model service: EXECUTE permissions, rate limits, per-user spend caps, fallbacks, request logging to Delta, guardrail policies</li>
+        <li>In the prototype, a model service routed to a hosted model stood in for it</li>
+      </ul>
+      <div class="flowline"><span>Python / MLflow scorer</span><em>→</em><span>model service</span><em>→</em><span>your gateway</span><em>→</em><span>usage table</span></div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>For your governance review</h3>
+    <ul class="plain">
+      <li><code>ai_decide()</code> is Beta, is enabled by a workspace admin on the Previews page, and runs on Databricks-hosted open-weight models. If only your gateway is approved, use <code>ai_query</code> through Option B for triage. It is governed, but returns no probabilities.</li>
+      <li>Today, SQL calls hosted models by <code>system.ai</code> name; custom model services are called from Python or REST.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ===================== SCALE ===================== -->
+<section class="slide" id="scale" data-title="Planning for scale">
+  <div class="head">
+    <p class="eyebrow">Operating at 1,000 to 1,500 questions per agent</p>
+    <h2>Planning for scale</h2>
+    <p class="lede">What we measured or confirmed, and how the design accounts for it.</p>
+  </div>
+  <div class="rows">
+    <div class="row"><div><b>500 benchmark questions per agent</b><span class="why">Documented limit for native benchmarks.</span></div><div class="do">Keep the master set in Delta. Sync up to 500 per agent and rotate batches by core question, or keep evaluation copies of the agent with identical instructions. Use the MLflow harness for the full set.</div></div>
+    <div class="row"><div><b>About 3 questions per minute natively</b><span class="why">Measured in our workspace. 1,500 questions serially is roughly 8 hours.</span></div><div class="do">Run the full suite nightly, use selective runs for daytime changes, and split large sets across evaluation copies.</div></div>
+    <div class="row"><div><b>Conversation API throughput is per workspace</b><span class="why">Shared by every Genie agent in the workspace.</span></div><div class="do">The harness retries with backoff and runs ground truth once per core question. Size throughput for full runs with your account team.</div></div>
+    <div class="row"><div><b>Evaluation runs consume workspace capacity</b><span class="why">Each run creates background work and stored results.</span></div><div class="do">Prefer fewer, larger runs, batch several core questions into one selective run, and delete old runs from the Benchmarks tab.</div></div>
+    <div class="row"><div><b>Beta features can change</b><span class="why">The evaluation API (chat mode only) and ai_decide() are Beta.</span></div><div class="do">Keep both behind thin wrappers in the job. Evaluate agent mode through the MLflow harness.</div></div>
+    <div class="row"><div><b>Answers vary between runs</b><span class="why">Identical runs differed by one grade on Q007.</span></div><div class="do">Report health per core question across its variations and track the trend over runs.</div></div>
+  </div>
+</section>
+
+<!-- ===================== NEXT ===================== -->
+<section class="slide" id="next" data-title="Next steps">
+  <div class="head">
+    <p class="eyebrow">Proposed next steps</p>
+    <h2>From reference implementation to a pilot on one agent</h2>
+  </div>
+  <div class="two">
+    <ol class="steps-next">
+      <li><div><b>Map it to your pipeline</b><span>Walk through this implementation and map each step to your current pipeline.</span></div></li>
+      <li><div><b>Pilot on one agent</b><span>Move the master set to core questions and variations, turn on the sync job and selective runs, and stand up the core-health dashboard.</span></div></li>
+      <li><div><b>Governance review</b><span>Choose Option A or B for the LLM steps and confirm ai_decide() for your workspace region.</span></div></li>
+      <li><div><b>Agree success criteria</b><span>Use the list on the right as a starting point.</span></div></li>
+    </ol>
+    <div class="panel">
+      <h3>Suggested pilot success criteria</h3>
+      <ul class="plain">
+        <li>Every benchmark question, including those beyond 500, is evaluated each cycle with no manual steps</li>
+        <li>Core-question health is available within an hour of an instruction or data change</li>
+        <li>A ground-truth change for one core question reaches all its variations in one operation, with an audit record</li>
+        <li>At least 80% of failures are auto-triaged with confidence of 0.6 or higher</li>
+        <li>No LLM call leaves Unity Catalog governance</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== DEMO WORKSPACE ===================== -->
+<section class="slide" id="demo" data-title="Reference package">
+  <div class="head">
+    <p class="eyebrow">Reference package</p>
+    <h2>Everything in this deck, in the repository</h2>
+    <p class="lede">The scripts that produced the numbers on these slides, with workspace names turned into settings, in the <code>src/</code> folder. Start with <code>src/README.md</code> for prerequisites, configuration, and run order.</p>
+  </div>
+  <div class="hub"><div class="panel hub-card"><h3>Build the benchmark</h3><p class="hub-desc">Steps 01 to 04</p><ul class="plain"><li><code>01a / 01b_synthetic_data.sql</code> synthetic reps and weekly TRx / NRx</li><li><code>02a / 02b_core_questions.sql</code> core questions with ground-truth SQL</li><li><code>03a_generate_variations.sql</code> variations with ai_query()</li><li><code>03b_validate_variations.sql</code> validation with ai_decide()</li><li><code>04_sync_benchmarks.py</code> create the Genie agent and sync benchmarks</li></ul></div><div class="panel hub-card"><h3>Evaluate</h3><p class="hub-desc">Steps 05 to 08</p><ul class="plain"><li><code>05_native_eval.py</code> native benchmark evaluation, full or selective</li><li><code>06_custom_harness.py</code> MLflow harness with compare, triage, and fix scorers</li><li><code>07_triage_native.sql</code> ai_decide() triage of native failures</li><li><code>12_classifier_comparison.sql</code> optional: ai_decide() against an LLM judge</li></ul></div><div class="panel hub-card"><h3>Improve and report</h3><p class="hub-desc">Steps 09 to 12</p><ul class="plain"><li><code>07b_recommendations.sql</code> one fix per core question and failure pattern</li><li><code>08b_core_health_current.sql</code> core-question health view</li><li><code>10_dashboard.json</code> AI/BI dashboard over the view</li><li><code>09_bulk_gt_update.py</code> ground-truth update with a selective re-run</li><li><code>11_apply_instruction_fix.py</code> apply a recommendation as an instruction</li></ul></div></div>
+  <p class="demo-note">Provided as-is as a reference implementation, not as a supported product. All data is synthetic, and features marked Beta may change.</p>
+</section>
+
+  </main>
+
+  <footer class="foot">
+    <div class="progress" aria-hidden="true"><i id="progressBar"></i></div>
+    <div class="keys"><kbd>←</kbd> <kbd>→</kbd> move · <kbd>M</kbd> map · <kbd>D</kbd> package · <kbd>C</kbd> contents</div>
+  </footer>
+</div>
+
+<div class="toc" id="toc" hidden role="dialog" aria-modal="true" aria-labelledby="tocTitle">
+  <div class="toc-card">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:1rem"><h3 id="tocTitle">Contents</h3><button class="btn" type="button" id="tocClose">Close</button></div>
+    <ol id="tocList"></ol>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/prism.min.js" data-manual></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-sql.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-python.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-bash.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-json.min.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------- step metadata (shared by the map, the strips and the preview) ---------- */
+  const STEPS = [
+    { id: "core", n: "01", lane: "Build", title: "Core question set", chips: [["ga","GA"],["","Unity Catalog"],["","Delta + CDF"]],
+      summary: "Ground-truth SQL lives only on the core question. Variations reference it by core_id, so one edit reaches all of them, and Change Data Feed keeps the history.",
+      result: "8 core questions; a quoting bug in the first seed was caught by executing every ground-truth query before syncing." },
+    { id: "gen", n: "02", lane: "Build", title: "Generate variations", chips: [["ga","GA"],["","ai_query()"],["","system.ai model"]],
+      summary: "One SQL statement reads each ground-truth query, extracts its semantic contract, and writes one variation per category.",
+      result: "64 variations across 8 categories, generated in a single statement." },
+    { id: "val", n: "03", lane: "Build", title: "Validate variations", chips: [["beta","Beta"],["","ai_decide()"]],
+      summary: "Three decisions per row with probabilities: equivalent to the ground truth, ambiguous, and which category.",
+      result: "57 of 72 accepted. Every filter-changing variation and 7 of 8 adversarial ones were rejected." },
+    { id: "sync", n: "04", lane: "Build", title: "Sync to Genie", chips: [["ga","GA"],["","Agent management API"]],
+      summary: "Rebuilds the agent's benchmark list from Delta and replaces only that section of the configuration. Instructions and joins stay as they are.",
+      result: "57 benchmarks synced, with stable IDs derived from test_id." },
+    { id: "native", n: "05", lane: "Evaluate", title: "Native benchmark evaluation", chips: [["beta","Beta"],["","Benchmark evaluation API"]],
+      summary: "Starts a Genie evaluation run for all benchmarks or a chosen subset and lands every result, with reason codes, in Delta.",
+      result: "41 of 57 GOOD (72%) at about 3.2 questions per minute. Weakest: Q003 and Q007." },
+    { id: "harness", n: "06", lane: "Evaluate", title: "MLflow harness", chips: [["ga","GA"],["","Conversation API"],["","mlflow.genai.evaluate"]],
+      summary: "Traces every Genie call and scores each row in MLflow. It has no benchmark cap and logs per-core pass rates as metrics.",
+      result: "45 of 57 passed (79%) in 6 minutes with 4 workers; median Genie latency 18.4 s." },
+    { id: "compare", n: "07", lane: "Evaluate", title: "Compare results", chips: [["ga","GA"],["","MLflow code scorer"]],
+      summary: "Compares result sets as normalized multisets, ignoring column names and order, with a partial label for extra columns.",
+      result: "Q003 failed on a definition gap (percentage vs ratio); Q007 mostly on rep ID vs rep name." },
+    { id: "triage", n: "08", lane: "Evaluate", title: "Triage failures", chips: [["beta","Beta"],["","ai_decide()"]],
+      summary: "Assigns a failure category, semantic equivalence, and severity, each with a confidence, and routes rows to auto-triage, review, or likely false negative.",
+      result: "15 of 16 auto-triaged; 14 of 16 agree with an independent LLM judge." },
+    { id: "recommend", n: "09", lane: "Improve", title: "Recommend fixes", chips: [["ga","GA"],["","Unity Gateway model service"]],
+      summary: "Writes one recommendation per core question and failure pattern through a governed model service that can route to your approved model.",
+      result: "9 patterns, 9 recommendations; every call logged with requester and tokens." },
+    { id: "health", n: "10", lane: "Improve", title: "Core-question health", chips: [["ga","GA"],["","Delta view"],["","AI/BI dashboard"]],
+      summary: "Takes the latest result per question across full and selective runs, grouped by core question with an 80% threshold.",
+      result: "Q003 and Q007 flagged by both evaluation paths on the first pass." },
+    { id: "bulk", n: "11", lane: "Improve", title: "Bulk ground-truth update", chips: [["ga","GA"],["","Delta UPDATE"],["beta","Beta"],["","Evaluation subset"]],
+      summary: "One update per core question, synced to every variation and re-evaluated alone, with an audit record.",
+      result: "One update reached exactly 7 variations; the 144 s selective run took Q003 from 0% to 100%." },
+    { id: "loop", n: "12", lane: "Improve", title: "Improvement loop", chips: [["ga","GA"],["","Agent management API"]],
+      summary: "Applies a recommendation as a Genie instruction through the API and re-runs only the affected core question.",
+      result: "Q007 harness pass rate rose from 29% to 86%; native BAD grades fell from 4 to 0." }
+  ];
+  const byId = Object.fromEntries(STEPS.map(s => [s.id, s]));
+
+  /* ---------- slides & navigation ---------- */
+  const stage = document.getElementById("stage");
+  const slides = Array.from(document.querySelectorAll(".slide"));
+  const counter = document.getElementById("counter");
+  const nowTitle = document.getElementById("nowTitle");
+  const bar = document.getElementById("progressBar");
+  let current = 0;
+
+  function indexOfId(id) { return slides.findIndex(s => s.id === id); }
+
+  function show(i, focus) {
+    i = Math.max(0, Math.min(slides.length - 1, i));
+    slides.forEach((s, k) => { s.hidden = k !== i; s.classList.remove("is-entering"); });
+    const s = slides[i];
+    void s.offsetWidth; s.classList.add("is-entering");
+    current = i;
+    counter.textContent = (i + 1) + " / " + slides.length;
+    nowTitle.textContent = s.dataset.title || "";
+    bar.style.width = ((i + 1) / slides.length * 100) + "%";
+    stage.scrollTop = 0;
+    try { history.replaceState(null, "", "#" + s.id); } catch (e) {}
+    document.getElementById("prevBtn").disabled = i === 0;
+    document.getElementById("nextBtn").disabled = i === slides.length - 1;
+    if (focus) { const h = s.querySelector("h1, h2"); if (h) { h.setAttribute("tabindex", "-1"); h.focus({ preventScroll: true }); } }
+    markToc();
+  }
+  function go(id) { const i = indexOfId(id); if (i >= 0) show(i, true); }
+
+  document.getElementById("prevBtn").addEventListener("click", () => show(current - 1, true));
+  document.getElementById("nextBtn").addEventListener("click", () => show(current + 1, true));
+  document.querySelectorAll("[data-go]").forEach(b => b.addEventListener("click", () => go(b.dataset.go)));
+
+  document.addEventListener("keydown", e => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea") return;
+    if (!toc.hidden) { if (e.key === "Escape") closeToc(); return; }
+    if (e.key === "ArrowRight" || e.key === "PageDown") { e.preventDefault(); show(current + 1, true); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); show(current - 1, true); }
+    else if (e.key === "Home") { e.preventDefault(); show(0, true); }
+    else if (e.key === "End") { e.preventDefault(); show(slides.length - 1, true); }
+    else if (e.key === "m" || e.key === "M") { go("map"); }
+    else if (e.key === "c" || e.key === "C") { openToc(); }
+    else if (e.key === "d" || e.key === "D") { go("demo"); }
+  });
+
+  /* ---------- contents ---------- */
+  const toc = document.getElementById("toc");
+  const tocList = document.getElementById("tocList");
+  slides.forEach((s, i) => {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    b.type = "button";
+    b.innerHTML = "<span>" + String(i + 1).padStart(2, "0") + "</span>";
+    b.appendChild(document.createTextNode(s.dataset.title || s.id));
+    b.addEventListener("click", () => { closeToc(); show(i, true); });
+    li.appendChild(b); tocList.appendChild(li);
+  });
+  function markToc() { tocList.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-current", i === current ? "true" : "false")); }
+  function openToc() { toc.hidden = false; const b = tocList.querySelectorAll("button")[current]; if (b) b.focus(); }
+  function closeToc() { toc.hidden = true; document.getElementById("tocBtn").focus(); }
+  document.getElementById("tocBtn").addEventListener("click", openToc);
+  document.getElementById("tocClose").addEventListener("click", closeToc);
+  toc.addEventListener("click", e => { if (e.target === toc) closeToc(); });
+
+  /* ---------- theme toggle ---------- */
+  const root = document.documentElement;
+  try { const t = localStorage.getItem("genie-deck-theme"); if (t) root.dataset.theme = t; } catch (e) {}
+  document.getElementById("themeBtn").addEventListener("click", () => {
+    const dark = root.dataset.theme ? root.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    root.dataset.theme = dark ? "light" : "dark";
+    try { localStorage.setItem("genie-deck-theme", root.dataset.theme); } catch (e) {}
+  });
+
+  /* ---------- step strips ---------- */
+  document.querySelectorAll(".slide.step").forEach(slide => {
+    const strip = slide.querySelector(".strip");
+    strip.setAttribute("aria-label", "Workflow steps");
+    STEPS.forEach(st => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.innerHTML = "<b>" + st.n + "</b>";
+      b.appendChild(document.createTextNode(st.title));
+      if (st.id === slide.dataset.step) b.setAttribute("aria-current", "step");
+      b.addEventListener("click", () => go("step-" + st.id));
+      strip.appendChild(b);
+    });
+  });
+
+  /* ---------- tabs & copy ---------- */
+  document.querySelectorAll(".codepanel").forEach(cp => {
+    const tabs = Array.from(cp.querySelectorAll(".tab"));
+    const panels = Array.from(cp.querySelectorAll(".panels > [role=tabpanel]"));
+    tabs.forEach((t, i) => {
+      t.addEventListener("click", () => {
+        tabs.forEach((x, k) => x.setAttribute("aria-selected", k === i ? "true" : "false"));
+        panels.forEach((p, k) => { p.hidden = k !== i; });
+      });
+    });
+    const copy = cp.querySelector(".copy");
+    copy.addEventListener("click", () => {
+      const panel = panels.find(p => !p.hidden) || panels[0];
+      const text = Array.from(panel.querySelectorAll("pre")).map(p => p.textContent).join("\n\n") || panel.textContent.trim();
+      const done = () => { copy.textContent = "Copied"; setTimeout(() => { copy.textContent = "Copy"; }, 1400); };
+      const fallback = () => {
+        const r = document.createRange(); r.selectNodeContents(panel);
+        const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        copy.textContent = "Selected"; setTimeout(() => { copy.textContent = "Copy"; }, 1400);
+      };
+      try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+    });
+  });
+
+  /* ---------- workflow map ---------- */
+  const nodes = Array.from(document.querySelectorAll(".node"));
+  const md = {
+    eyebrow: document.getElementById("mdEyebrow"), title: document.getElementById("mdTitle"), chips: document.getElementById("mdChips"),
+    summary: document.getElementById("mdSummary"), result: document.getElementById("mdResult"), open: document.getElementById("mdOpen"),
+    preview: document.getElementById("mdPreview"), links: document.getElementById("mdLinks")
+  };
+  let selected = "core";
+  function selectStep(id) {
+    const st = byId[id]; if (!st) return;
+    selected = id;
+    nodes.forEach(n => n.setAttribute("aria-pressed", n.dataset.step === id ? "true" : "false"));
+    md.eyebrow.textContent = "Step " + st.n + " · " + st.lane;
+    md.title.textContent = st.title;
+    md.chips.innerHTML = "";
+    st.chips.forEach(([cls, label]) => { const c = document.createElement("span"); c.className = "chip " + cls; c.textContent = label; md.chips.appendChild(c); });
+    md.summary.textContent = st.summary;
+    md.result.innerHTML = "<b>Observed:</b> ";
+    md.result.appendChild(document.createTextNode(st.result));
+    const links = document.querySelector("#step-" + id + " .ws-list");
+    md.links.innerHTML = links ? links.innerHTML : "";
+    const src = document.querySelector("#step-" + id + " .codepanel");
+    md.preview.innerHTML = "";
+    if (src) {
+      const label = src.querySelector(".tab");
+      const pre = src.querySelector(".panels > [role=tabpanel] pre");
+      const box = document.createElement("div"); box.className = "codepanel";
+      box.innerHTML = '<div class="cp-head"><div class="tabs"><span class="tab" aria-selected="true"></span></div></div>';
+      box.querySelector(".tab").textContent = (label ? label.textContent : "code") + " · preview";
+      if (pre) box.appendChild(pre.cloneNode(true));
+      md.preview.appendChild(box);
+    }
+  }
+  nodes.forEach(n => {
+    n.addEventListener("click", () => selectStep(n.dataset.step));
+    n.addEventListener("dblclick", () => go("step-" + n.dataset.step));
+  });
+  md.open.addEventListener("click", () => go("step-" + selected));
+
+  /* ---------- charts (SVG, drawn to one scale per chart) ---------- */
+  const NS = "http://www.w3.org/2000/svg";
+  function el(name, attrs, text) {
+    const e = document.createElementNS(NS, name);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  // Step 03: accepted vs rejected per category (each category has 8 rows)
+  (function () {
+    const svg = document.getElementById("chartVal"); if (!svg) return;
+    const data = [["original",8,0],["paraphrase",8,0],["conversational",8,0],["contextual_pronoun",8,0],["time_variation",8,0],["shorthand_typo",8,0],["edge_case_short",8,0],["filter_sensitivity",0,8],["adversarial",1,7]];
+    const L = 132, W = 300, R = 40, rowH = 22, top = 6, H = top + data.length * rowH + 22;
+    svg.setAttribute("viewBox", "0 0 " + (L + W + R) + " " + H);
+    const x = v => L + v / 8 * W;
+    [0, 4, 8].forEach(t => { svg.appendChild(el("line", { x1: x(t), x2: x(t), y1: top - 2, y2: H - 18, class: "grid" })); svg.appendChild(el("text", { x: x(t), y: H - 4, "text-anchor": "middle", class: "muted" }, String(t))); });
+    data.forEach(([name, ok, no], i) => {
+      const y = top + i * rowH;
+      svg.appendChild(el("text", { x: L - 8, y: y + 14, "text-anchor": "end" }, name));
+      if (ok) svg.appendChild(el("rect", { x: x(0), y: y + 3, width: x(ok) - x(0), height: rowH - 8, class: "good", rx: 2 }));
+      if (no) svg.appendChild(el("rect", { x: x(ok), y: y + 3, width: x(ok + no) - x(ok), height: rowH - 8, class: "bad", rx: 2 }));
+      svg.appendChild(el("text", { x: x(8) + 6, y: y + 14, class: "muted" }, ok + "/8"));
+    });
+  })();
+
+  // Step 08: failure categories (16 native failures)
+  (function () {
+    const svg = document.getElementById("chartTriage"); if (!svg) return;
+    const data = [["wrong_metric_definition",7],["wrong_join",3],["missing_or_wrong_filter",3],["execution_error",2],["granularity_only",1]];
+    const L = 168, W = 260, R = 30, rowH = 24, top = 6, H = top + data.length * rowH + 22, max = 8;
+    svg.setAttribute("viewBox", "0 0 " + (L + W + R) + " " + H);
+    const x = v => L + v / max * W;
+    [0, 2, 4, 6, 8].forEach(t => { svg.appendChild(el("line", { x1: x(t), x2: x(t), y1: top - 2, y2: H - 18, class: "grid" })); svg.appendChild(el("text", { x: x(t), y: H - 4, "text-anchor": "middle", class: "muted" }, String(t))); });
+    data.forEach(([name, n], i) => {
+      const y = top + i * rowH;
+      svg.appendChild(el("text", { x: L - 8, y: y + 15, "text-anchor": "end" }, name));
+      svg.appendChild(el("rect", { x: x(0), y: y + 4, width: x(n) - x(0), height: rowH - 9, class: i === 0 ? "acc" : "navy", rx: 2 }));
+      svg.appendChild(el("text", { x: x(n) + 6, y: y + 15, class: "muted" }, String(n)));
+    });
+  })();
+
+  // Results: pass rate by core question, native vs harness, with after-fix markers
+  (function () {
+    const svg = document.getElementById("chartCore"); if (!svg) return;
+    const data = [
+      ["Q001 · my Zorvela TRx", 1.0, 1.0], ["Q002 · NRx by brand", 6/7, 1.0], ["Q003 · Zorvela market share", 0, 0],
+      ["Q004 · top 5 Telmarix territories", 1.0, 1.0], ["Q005 · weekly Vylentra TRx", 1.0, 1.0], ["Q006 · Kestravo Q1 vs Q2", 6/7, 1.0],
+      ["Q007 · avg weekly TRx per rep", 0, 2/7], ["Q008 · top region Zorvela NRx", 1.0, 1.0]
+    ];
+    const after = { 2: { series: 0, v: 1.0, label: "100% after GT update" }, 6: { series: 1, v: 6/7, label: "86% after instruction" } };
+    const L = 214, W = 520, R = 150, groupH = 40, barH = 13, top = 8, H = top + data.length * groupH + 24;
+    svg.setAttribute("viewBox", "0 0 " + (L + W + R) + " " + H);
+    const x = v => L + v * W;
+    [0, .25, .5, .75, 1].forEach(t => {
+      svg.appendChild(el("line", { x1: x(t), x2: x(t), y1: top - 4, y2: H - 20, class: "grid" }));
+      svg.appendChild(el("text", { x: x(t), y: H - 5, "text-anchor": "middle", class: "muted" }, Math.round(t * 100) + "%"));
+    });
+    svg.appendChild(el("line", { x1: x(.8), x2: x(.8), y1: top - 4, y2: H - 20, stroke: "var(--accent)", "stroke-dasharray": "4 4", "stroke-width": 1.5 }));
+    svg.appendChild(el("text", { x: x(.8) + 4, y: top + 6, class: "muted" }, "80% threshold"));
+    data.forEach(([name, nat, har], i) => {
+      const y = top + i * groupH + 6;
+      svg.appendChild(el("text", { x: L - 10, y: y + barH + 4, "text-anchor": "end" }, name));
+      [[nat, "navy", 0], [har, "good", 1]].forEach(([v, cls, k]) => {
+        const yy = y + k * (barH + 2);
+        svg.appendChild(el("rect", { x: x(0), y: yy, width: Math.max(1.5, x(v) - x(0)), height: barH, class: cls, rx: 2 }));
+        svg.appendChild(el("text", { x: x(v) + 5, y: yy + barH - 2, class: "muted", "font-size": "11" }, Math.round(v * 100) + "%"));
+      });
+      const a = after[i];
+      if (a) {
+        const yy = y + a.series * (barH + 2) + barH / 2;
+        svg.appendChild(el("circle", { cx: x(a.v), cy: yy, r: 7, class: "after" }));
+        svg.appendChild(el("text", { x: x(1) + 12, y: yy + 4, fill: "var(--accent)", style: "fill: var(--accent)", "font-weight": "600" }, a.label));
+      }
+    });
+  })();
+
+  /* ---------- syntax highlighting, then boot ---------- */
+  try { if (window.Prism) Prism.highlightAll(); } catch (e) {}
+  selectStep("core");
+  const start = indexOfId((location.hash || "").slice(1));
+  show(start >= 0 ? start : 0, false);
+})();
+</script>
+</body>
+</html>

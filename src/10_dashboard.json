@@ -1,0 +1,534 @@
+{
+ "datasets": [
+  {
+   "name": "ds_core",
+   "displayName": "Core question health (current)",
+   "queryLines": [
+    "SELECT source, core_id, core_label, variations, pass, fail, pass_rate, health_status, last_evaluated ",
+    "FROM core_health_current ORDER BY core_id"
+   ]
+  },
+  {
+   "name": "ds_failures",
+   "displayName": "Triaged failures (ai_decide)",
+   "queryLines": [
+    "SELECT 'native_eval_run' AS source, test_id, core_id, question, failure_category, failure_confidence, ",
+    "       p_semantically_equivalent, severity, triage_route, genie_sql, gt_sql ",
+    "FROM native_diagnostics ",
+    "UNION ALL ",
+    "SELECT 'mlflow_harness', test_id, core_id, question, failure_category, failure_confidence, ",
+    "       semantically_equivalent_p, severity, ",
+    "       CASE WHEN semantically_equivalent_p >= 0.8 THEN 'likely_false_negative' WHEN failure_confidence < 0.6 THEN 'human_review' ELSE 'auto_triaged' END, ",
+    "       genie_sql, NULL ",
+    "FROM harness_results ",
+    "WHERE run_id <> 'e71aa54c7a3c424a9074e2a3e59f6e20' ",
+    "QUALIFY ROW_NUMBER() OVER (PARTITION BY test_id ORDER BY run_ts DESC) = 1 ",
+    "  AND NOT passed AND failure_category IS NOT NULL AND failure_category <> 'none'"
+   ]
+  }
+ ],
+ "pages": [
+  {
+   "name": "overview",
+   "displayName": "Genie Benchmark Health",
+   "pageType": "PAGE_TYPE_CANVAS",
+   "layoutVersion": "GRID_V1",
+   "layout": [
+    {
+     "widget": {
+      "name": "title",
+      "multilineTextboxSpec": {
+       "lines": [
+        "## Genie Benchmark Health by Core Question\n",
+        "\n",
+        "Reference implementation on synthetic pharma data. Latest result per question across full and selective re-runs; failures triaged with ai_decide()."
+       ]
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 0,
+      "width": 12,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "filter-source",
+      "queries": [
+       {
+        "name": "ds_core_source",
+        "query": {
+         "datasetName": "ds_core",
+         "fields": [
+          {
+           "name": "source",
+           "expression": "`source`"
+          }
+         ],
+         "disaggregated": false
+        }
+       },
+       {
+        "name": "ds_failures_source",
+        "query": {
+         "datasetName": "ds_failures",
+         "fields": [
+          {
+           "name": "source",
+           "expression": "`source`"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "filter-single-select",
+       "encodings": {
+        "fields": [
+         {
+          "fieldName": "source",
+          "displayName": "Evaluation source",
+          "queryName": "ds_core_source"
+         },
+         {
+          "fieldName": "source",
+          "displayName": "Evaluation source",
+          "queryName": "ds_failures_source"
+         }
+        ]
+       },
+       "selection": {
+        "defaultSelection": {
+         "values": {
+          "dataType": "STRING",
+          "values": [
+           {
+            "value": "native_eval_run"
+           }
+          ]
+         }
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Evaluation source"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 2,
+      "width": 3,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-variations",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_core",
+         "fields": [
+          {
+           "name": "sum(variations)",
+           "expression": "SUM(`variations`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "sum(variations)",
+         "displayName": "Questions evaluated"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Questions evaluated"
+       }
+      }
+     },
+     "position": {
+      "x": 3,
+      "y": 2,
+      "width": 3,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-pass",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_core",
+         "fields": [
+          {
+           "name": "sum(pass)",
+           "expression": "SUM(`pass`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "sum(pass)",
+         "displayName": "Passed"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Passed"
+       }
+      }
+     },
+     "position": {
+      "x": 6,
+      "y": 2,
+      "width": 3,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "kpi-attention",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_core",
+         "fields": [
+          {
+           "name": "sum(fail)",
+           "expression": "SUM(`fail`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "counter",
+       "encodings": {
+        "value": {
+         "fieldName": "sum(fail)",
+         "displayName": "Failed"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Failed"
+       }
+      }
+     },
+     "position": {
+      "x": 9,
+      "y": 2,
+      "width": 3,
+      "height": 2
+     }
+    },
+    {
+     "widget": {
+      "name": "core-pass-rate",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_core",
+         "fields": [
+          {
+           "name": "core_label",
+           "expression": "`core_label`"
+          },
+          {
+           "name": "health_status",
+           "expression": "`health_status`"
+          },
+          {
+           "name": "avg(pass_rate)",
+           "expression": "AVG(`pass_rate`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fields": [
+          {
+           "fieldName": "avg(pass_rate)",
+           "displayName": "Pass rate"
+          }
+         ],
+         "format": {
+          "type": "number-percent"
+         }
+        },
+        "y": {
+         "fieldName": "core_label",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Core question"
+        },
+        "color": {
+         "fieldName": "health_status",
+         "scale": {
+          "type": "categorical",
+          "mappings": [
+           {
+            "value": "Healthy",
+            "color": "#3BA272"
+           },
+           {
+            "value": "Needs attention",
+            "color": "#FF7E5C"
+           }
+          ]
+         },
+         "displayName": "Health"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Pass rate by core question (threshold 80%)"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 4,
+      "width": 7,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "failure-categories",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_failures",
+         "fields": [
+          {
+           "name": "failure_category",
+           "expression": "`failure_category`"
+          },
+          {
+           "name": "triage_route",
+           "expression": "`triage_route`"
+          },
+          {
+           "name": "count(test_id)",
+           "expression": "COUNT(`test_id`)"
+          }
+         ],
+         "disaggregated": false
+        }
+       }
+      ],
+      "spec": {
+       "version": 3,
+       "widgetType": "bar",
+       "encodings": {
+        "x": {
+         "scale": {
+          "type": "quantitative"
+         },
+         "fields": [
+          {
+           "fieldName": "count(test_id)",
+           "displayName": "Failures"
+          }
+         ]
+        },
+        "y": {
+         "fieldName": "failure_category",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Failure category"
+        },
+        "color": {
+         "fieldName": "triage_route",
+         "scale": {
+          "type": "categorical"
+         },
+         "displayName": "Triage route"
+        }
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Failure categories (ai_decide)"
+       }
+      }
+     },
+     "position": {
+      "x": 7,
+      "y": 4,
+      "width": 5,
+      "height": 6
+     }
+    },
+    {
+     "widget": {
+      "name": "failure-details",
+      "queries": [
+       {
+        "name": "main_query",
+        "query": {
+         "datasetName": "ds_failures",
+         "fields": [
+          {
+           "name": "test_id",
+           "expression": "`test_id`"
+          },
+          {
+           "name": "question",
+           "expression": "`question`"
+          },
+          {
+           "name": "failure_category",
+           "expression": "`failure_category`"
+          },
+          {
+           "name": "failure_confidence",
+           "expression": "`failure_confidence`"
+          },
+          {
+           "name": "p_semantically_equivalent",
+           "expression": "`p_semantically_equivalent`"
+          },
+          {
+           "name": "severity",
+           "expression": "`severity`"
+          },
+          {
+           "name": "triage_route",
+           "expression": "`triage_route`"
+          },
+          {
+           "name": "genie_sql",
+           "expression": "`genie_sql`"
+          }
+         ],
+         "disaggregated": true
+        }
+       }
+      ],
+      "spec": {
+       "version": 2,
+       "widgetType": "table",
+       "encodings": {
+        "columns": [
+         {
+          "fieldName": "test_id",
+          "displayName": "Test"
+         },
+         {
+          "fieldName": "question",
+          "displayName": "Question"
+         },
+         {
+          "fieldName": "failure_category",
+          "displayName": "Failure category"
+         },
+         {
+          "fieldName": "failure_confidence",
+          "displayName": "Confidence"
+         },
+         {
+          "fieldName": "p_semantically_equivalent",
+          "displayName": "P(equivalent)"
+         },
+         {
+          "fieldName": "severity",
+          "displayName": "Severity"
+         },
+         {
+          "fieldName": "triage_route",
+          "displayName": "Route"
+         },
+         {
+          "fieldName": "genie_sql",
+          "displayName": "Genie SQL"
+         }
+        ]
+       },
+       "frame": {
+        "showTitle": true,
+        "title": "Failure diagnostics"
+       }
+      }
+     },
+     "position": {
+      "x": 0,
+      "y": 10,
+      "width": 12,
+      "height": 8
+     }
+    }
+   ]
+  }
+ ],
+ "uiSettings": {
+  "theme": {
+   "canvasBackgroundColor": {
+    "light": "#FCFCFC",
+    "dark": "#1F272D"
+   },
+   "widgetBackgroundColor": {
+    "light": "#FFFFFF",
+    "dark": "#11171C"
+   },
+   "widgetBorderColor": {
+    "light": "#FFFFFF",
+    "dark": "#11171C"
+   },
+   "fontColor": {
+    "light": "#11171C",
+    "dark": "#E8ECF0"
+   },
+   "selectionColor": {
+    "light": "#2272B4",
+    "dark": "#8ACAFF"
+   },
+   "visualizationColors": [
+    "#0072B2",
+    "#E69F00",
+    "#009E73",
+    "#CC79A7",
+    "#D55E00",
+    "#56B4E9",
+    "#F0E442"
+   ],
+   "widgetHeaderAlignment": "LEFT"
+  }
+ }
+}

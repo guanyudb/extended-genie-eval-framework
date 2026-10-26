@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+# written by 04_sync_benchmarks.py on first run
+src/state.json

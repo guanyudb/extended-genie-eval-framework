@@ -1,0 +1,17 @@
+INSERT INTO {{schema}}.core_questions VALUES
+('Q001', 'What were my Zorvela TRx in 2026-Q2?', 'sales_rep_id = REP001',
+ 'SELECT SUM(trx) AS total_trx FROM {{schema}}.rx_weekly WHERE brand = \'ZORVELA\' AND quarter = \'2026-Q2\' AND sales_rep_id = \'REP001\'', 'simple', 'rep/brand/time', 'seed', 'initial load'),
+('Q002', 'What were total NRx by brand in 2026-Q2?', NULL,
+ 'SELECT brand, SUM(nrx) AS total_nrx FROM {{schema}}.rx_weekly WHERE quarter = \'2026-Q2\' GROUP BY brand ORDER BY brand', 'simple', 'brand/time', 'seed', 'initial load'),
+('Q003', 'What was Zorvela market share in the Northeast region in 2026-Q2?', NULL,
+ 'SELECT ROUND(SUM(trx) / SUM(market_trx), 4) AS market_share FROM {{schema}}.rx_weekly WHERE brand = \'ZORVELA\' AND region = \'Northeast\' AND quarter = \'2026-Q2\'', 'complex', 'metric definition', 'seed', 'initial load'),
+('Q004', 'Which 5 territories had the highest Telmarix TRx in 2026-Q1?', NULL,
+ 'SELECT territory_id, SUM(trx) AS total_trx FROM {{schema}}.rx_weekly WHERE brand = \'TELMARIX\' AND quarter = \'2026-Q1\' GROUP BY territory_id ORDER BY total_trx DESC LIMIT 5', 'complex', 'ranking', 'seed', 'initial load'),
+('Q005', 'What were weekly Vylentra TRx in September 2026?', NULL,
+ 'SELECT week_end_date, SUM(trx) AS total_trx FROM {{schema}}.rx_weekly WHERE brand = \'VYLENTRA\' AND week_end_date BETWEEN DATE\'2026-09-01\' AND DATE\'2026-09-30\' GROUP BY week_end_date ORDER BY week_end_date', 'simple', 'trend/time', 'seed', 'initial load'),
+('Q006', 'How did Kestravo TRx change from 2026-Q1 to 2026-Q2?', NULL,
+ 'SELECT SUM(CASE WHEN quarter = \'2026-Q1\' THEN trx END) AS q1_trx, SUM(CASE WHEN quarter = \'2026-Q2\' THEN trx END) AS q2_trx, SUM(CASE WHEN quarter = \'2026-Q2\' THEN trx END) - SUM(CASE WHEN quarter = \'2026-Q1\' THEN trx END) AS change_trx FROM {{schema}}.rx_weekly WHERE brand = \'KESTRAVO\' AND quarter IN (\'2026-Q1\', \'2026-Q2\')', 'complex', 'period comparison', 'seed', 'initial load'),
+('Q007', 'What was the average weekly Zorvela TRx per sales rep in 2026-Q2?', NULL,
+ 'SELECT r.rep_name, ROUND(AVG(x.trx), 1) AS avg_weekly_trx FROM {{schema}}.rx_weekly x JOIN {{schema}}.rep_territory r ON x.sales_rep_id = r.sales_rep_id WHERE x.brand = \'ZORVELA\' AND x.quarter = \'2026-Q2\' GROUP BY r.rep_name ORDER BY avg_weekly_trx DESC', 'complex', 'rep/aggregation', 'seed', 'initial load'),
+('Q008', 'Which region had the highest Zorvela NRx in 2026-Q3?', NULL,
+ 'SELECT region, SUM(nrx) AS total_nrx FROM {{schema}}.rx_weekly WHERE brand = \'ZORVELA\' AND quarter = \'2026-Q3\' GROUP BY region ORDER BY total_nrx DESC LIMIT 1', 'simple', 'region/ranking', 'seed', 'initial load')
